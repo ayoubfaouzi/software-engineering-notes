@@ -1985,3 +1985,53 @@ What’s the rationale for calling the `cancel` function as a `defer` function?
 ## Chapter 9: Concurrency: Practice
 
 ### #61: Propagating an inappropriate context
+
+- Context propagation can sometimes lead to subtle bugs, preventing subfunctions from being correctly executed.
+- Consider the example below:
+    ```go
+    func handler(w http.ResponseWriter, r *http.Request) {
+        response, err := doSomeTask(r.Context(), r)
+        if err != nil {
+            http.Error(w, err.Error(), http.StatusInternalServerError)
+            return
+        }
+        go func() {
+            err := publish(r.Context(), response)
+            // Do something with err
+        }()
+        writeResponse(response)
+    }
+    ```
+- We have to know that the context attached to an HTTP request can cancel in different conditions:
+    - When the client’s connection closes
+    - In the case of an HTTP/2 request, when the request is canceled
+    - ⚠️ When the response has been written back to the client
+- When the response has been written to the client, the context associated with the request will be **canceled**. Therefore, we are facing a **race condition**.
+- If the response is written before or during the Kafka publication, the message shouldn’t be published. Calling `publish` will return an error because we returned the HTTP response quickly.
+- Ideally, we would like to have a new context that is **detached** from the potential parent cancellation but still conveys the **values**.
+- The context’s deadline is managed by the `Deadline` method and the cancellation signal is managed via the `Done` and `Err` methods. When a deadline has passed or the context has been canceled, `Done` should return a **closed channel**, whereas `Err` should return an error. Finally, the values are carried via the `Value` method.
+- Let’s create a custom context that detaches the cancellation signal from a parent context:
+    ```go
+    type detach struct {
+        ctx context.Context
+    }
+    func (d detach) Deadline() (time.Time, bool) {
+        return time.Time{}, false
+    }
+    func (d detach) Done() <-chan struct{} {
+        return nil
+    }
+    func (d detach) Err() error {
+        return nil
+    }
+    func (d detach) Value(key any) any {
+        return d.ctx.Value(key)
+    }
+    ```
+- Thanks to our custom context, we can now call publish and detach the cancellation signal:
+    ```go
+    err := publish(detach{ctx: r.Context()}, response)
+    ```
+
+### #62: Starting a goroutine without knowing when to stop it
+
