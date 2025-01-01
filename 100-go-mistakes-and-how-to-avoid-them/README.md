@@ -2035,3 +2035,47 @@ What’s the rationale for calling the `cancel` function as a `defer` function?
 
 ### #62: Starting a goroutine without knowing when to stop it
 
+- A goroutine is a resource like any other that must eventually be closed to free memory or other resources.
+- Starting a goroutine without knowing when to stop it is a design issue. Whenever a goroutine is started, we should have a clear plan about when it will stop, if we don't, it can lead to **leaks** ⚠️.
+-  In terms of memory, a goroutine starts with a **minimum stack size** of `2 KB`, which can grow and shrink as needed (the **maximum stack** size is `1 GB` on 64-bit and `250 MB` on 32-bit). Memory-wise, a goroutine can also hold variable references allocated to the heap. Meanwhile, a goroutine can hold resources such as HTTP or database connections, open files, and network sockets that should eventually be closed gracefully. If a goroutine is leaked, these kinds of resources will also be leaked.
+-  Here’s a first implementation:
+    ```go
+    func main() {
+        newWatcher()
+        // Run the application
+    }
+
+    type watcher struct { /* Some resources */ }
+
+    func newWatcher() {
+        w := watcher{}
+        go w.watch()
+    }
+    ```
+- The problem with this code is that when the main goroutine exits, the application is stopped. Hence, the resources created by watcher aren’t closed **gracefully**.
+- One option could be to pass to `newWatcher` a context that will be **canceled** when `main` returns:
+    ```go
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+    newWatcher(ctx)
+    ```
+  - However, can we guarantee that watch will have time to do so? Absolutely not — and that’s a design flaw !
+- The problem is that we used signaling to convey that a goroutine had to be stopped. We didn’t **block the parent** goroutine until the resources had been closed. Let’s make sure we do:
+```go
+func main() {
+    w := newWatcher()
+    defer w.close() // Defers the call to the close method
+    // Run the application
+}
+func newWatcher() watcher {
+    w := watcher{}
+    go w.watch()
+    return w
+}
+func (w watcher) close() {
+    // Close the resources
+}
+```
+- `watcher` has a new method: `close`. Instead of signaling watcher that it’s time to close its resources, we now call this `close` method, using `defer` to guarantee that the resources are closed before the application exits.
+
+### #63: Not being careful with goroutines and loop variables
