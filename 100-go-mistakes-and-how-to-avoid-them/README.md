@@ -2110,3 +2110,58 @@ func (w watcher) close() {
     ```
 
 ### #64: Expecting deterministic behavior using select and channels
+
+Imagine an example where we receive from two channels, but we want to prioritize `messageCh`. For example, if a disconnection occurs, we want to ensure that we have received all the messages before returning. We may decide to handle the prioritization like so:
+```go
+for {
+    select {
+        case v := <-messageCh: fmt.Println(v)
+    case <-disconnectCh:
+        fmt.Println("disconnection, return")
+        return
+    }
+}
+
+// Dummy code to produce messages.
+for i := 0; i < 10; i++ {
+    messageCh <- i
+}
+disconnectCh <- struct{}{}
+```
+
+- If we run this example, here is a possible output if `messageCh` is buffered:
+```
+0 1 2 3 4
+disconnection, return
+```
+- Why 🤔? If one or more of the communications can proceed, a single one that can proceed is chosen via a uniform **pseudo-random selection**.
+- Unlike a `switch` statement, where the first case with a match wins, the `select` statement selects **randomly** if multiple options are possible.
+- There are different possibilities if we want to receive all the messages before returning in case of a disconnection.
+    - If there’s a **single producer** goroutine, we have two options:
+        - Make `messageCh` an **unbuffered** channel instead of a buffered channel.
+        - Use a **single channel** instead of two channels. For example, we can define a struct that conveys either both messages.
+    - If we fall into the case where we have multiple producer goroutines, it may be impossible to guarantee which one writes first. Hence, whether we have an **unbuffered** `messageCh` channel or a **single** channel, it will lead to a **race condition** among the producer goroutines.
+      - In that case, we can implement the following solution: Receive from either `messageCh` or `disconnectCh` and if a disconnection is received, read all the existing messages in `messageCh`, if any, then return.
+```go
+for {
+    select {
+    case v := <-messageCh: fmt.Println(v)
+    case <-disconnectCh:
+        for {
+            select {
+            case v := <-messageCh: fmt.Println(v)
+            default:
+                fmt.Println("disconnection, return")
+                return
+            }
+        }
+    }
+}
+```
+
+### #65: Not using notification channels
+
+- If we don’t need a specific value to convey some information, we need a channel **without data**. The idiomatic way to handle it is a channel of **empty structs**: `chan struct{}`.
+- In Go, an empty struct is a struct without any fields. Regardless of the architecture, it occupies **zero bytes** of storage. But why not use an **empty interface** `(var i interface{})`? Because an empty interface isn’t free; it occupies 8 bytes on 32-bit architecture and 16 bytes on 64-bit architecture.
+- For example, if we need a **hash set** structure (a collection of unique elements), we should use an empty struct as a value: `map[K]struct{}`.
+- An empty struct clarifies for receivers that they shouldn’t expect any meaning from a message’s content—only the fact that they have received a message. In Go, such channels are called **notification channels**.
