@@ -2079,3 +2079,34 @@ func (w watcher) close() {
 - `watcher` has a new method: `close`. Instead of signaling watcher that it’s time to close its resources, we now call this `close` method, using `defer` to guarantee that the resources are closed before the application exits.
 
 ### #63: Not being careful with goroutines and loop variables
+
+- In the following example, we initialize a slice. Then, within a closure executed as a new goroutine, we access this element:
+    ```go
+    s := []int{1, 2, 3}
+    for _, i := range s {
+        go func() {
+            fmt.Print(i)
+        }()
+    }
+    ```
+- The output of this code **isn’t deterministic**. For example, sometimes it prints `233` and other times `333`.
+- All the goroutines refer to the exact same variable! When a goroutine runs, it prints the value of `i` at the time `fmt.Print` is executed. Hence, i may have been modified since the goroutine was launched.
+- The first solution, if we want to keep using a closure, involves **creating a new variable**:
+    ```go
+    for _, i := range s {
+        val := i
+        go func() {
+            fmt.Print(val)
+        }()
+    }
+    ```
+- The second option no longer relies on a closure and instead uses an **actual function**:
+    ```go
+    for _, i := range s {
+        go func(val int) {
+            fmt.Print(val)
+        }(i)
+    }
+    ```
+
+### #64: Expecting deterministic behavior using select and channels
