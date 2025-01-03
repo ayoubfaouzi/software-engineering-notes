@@ -2165,3 +2165,36 @@ for {
 - In Go, an empty struct is a struct without any fields. Regardless of the architecture, it occupies **zero bytes** of storage. But why not use an **empty interface** `(var i interface{})`? Because an empty interface isn’t free; it occupies 8 bytes on 32-bit architecture and 16 bytes on 64-bit architecture.
 - For example, if we need a **hash set** structure (a collection of unique elements), we should use an empty struct as a value: `map[K]struct{}`.
 - An empty struct clarifies for receivers that they shouldn’t expect any meaning from a message’s content—only the fact that they have received a message. In Go, such channels are called **notification channels**.
+
+### #66: Not using nil channels
+
+- In this example of merging two channels, we can use **nil channels** to implement an elegant state machine that will remove one case from a `select` statement, it doesn’t require a **busy loop** that will waste CPU cycles.
+- If `ch1` is closed, we assign `ch1` to `nil`. Hence, during the next loop iteration, the `select` statement will only wait for two conditions:
+    - `ch2` has a new message.
+    - `ch2` is closed
+```go
+func merge(ch1, ch2 <-chan int) <-chan int {
+    ch := make(chan int, 1)
+    go func() {
+        for ch1 != nil || ch2 != nil {
+            select {
+                case v, open := <-ch1:
+                    if !open {
+                        ch1 = nil
+                        break
+                    }
+                    ch <- v
+                case v, open := <-ch2:
+                    if !open {
+                        ch2 = nil
+                        break
+                    }
+                    ch <- v
+            }
+        }
+        close(ch)
+    }()
+    return ch
+}
+```
+
