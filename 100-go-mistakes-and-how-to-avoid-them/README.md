@@ -2198,3 +2198,18 @@ func merge(ch1, ch2 <-chan int) <-chan int {
 }
 ```
 
+### #67: Being puzzled about channel size
+
+- A **buffered channel** doesn’t provide any **strong synchronization**. Buffered channels can lead to obscure **deadlocks** that would be immediately apparent with unbuffered channels.
+- While using a **worker pooling-like** pattern, meaning spinning a fixed number of goroutines that need to send data to a shared channel. In that case, we can tie
+the channel size to the number of goroutines created 👍.
+- When using channels for **rate-limiting** problems. For example, if we need to enforce resource utilization by bounding the number of requests, we should set
+up the channel size according to the limit 👍.
+- It’s pretty common to see a codebase using magic numbers for setting a channel size: `ch := make(chan int, 40)`.
+    - Why 40? What’s the rationale? Why not `50` or even `1000`? Setting such a value should be done for a good reason.
+    - Perhaps it was decided following a **benchmark** or performance tests.
+    - In many cases, it’s probably a good idea to **comment** on the rationale for such a value.
+- Let’s bear in mind that deciding about an accurate **queue size** isn’t an easy problem. First, it’s a balance between CPU and memory. The smaller the value, the more **CPU contention** we can face. But the bigger the value, the more **memory** will need to be allocated.
+- Another point to consider is the one mentioned in a 2011 white paper about [LMAX Disruptor](https://lmax-exchange.github.io/disruptor/files/Disruptor-1.0.pdf):
+    > Queues are typically always close to full or close to empty due to the differences in pace between consumers and producers. They very rarely operate in a balanced middle ground where the rate of production and consumption is evenly matched
+- So, it’s rare to find a channel size that will be steadily accurate, meaning an accurate value that won’t lead to too much contention or a waste of memory allocation.
