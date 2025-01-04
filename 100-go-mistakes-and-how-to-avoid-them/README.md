@@ -2254,3 +2254,37 @@ up the channel size according to the limit 👍.
 to format `Customer`. But because `UpdateAge` already acquires the mutex lock, the `String` method won’t be able to acquire it.
 - ⚠️ Hence, this leads to a deadlock situation. (That's why we should create unit tests also for edge cases 🧠).
 - In our case, locking the mutex only after the age has been checked avoids the deadlock situation or we change the way we format the error so that it doesn’t call the `String` method.
+
+### #69: Creating data races with append
+
+- In the following example, we will initialize a slice and create two goroutines that will use `append` to create a new slice with an additional element:
+    ```go
+    s := make([]int, 1)
+    go func() {
+        s1 := append(s, 1)
+        fmt.Println(s1)
+    }()
+    go func() {
+        s2 := append(s, 1)
+        fmt.Println(s2)
+    }()
+    ```
+  - In this example, we create a slice with `make([]int, 1)`. The code creates a one length, one-capacity slice. Thus, because the slice is **full**, using `append` in each goroutine returns a slice backed by a new array. It **doesn’t mutate** the existing array; hence, it doesn’t lead to a data race.
+- Instead of creating a slice with a length of 1, we create it with a length of 0 but a capacity of 1: `s := make([]int, 0, 1)`:
+    ```
+    WARNING: DATA RACE
+    Write at 0x00c00009e080 by goroutine 10:
+    ...
+    Previous write at 0x00c00009e080 by goroutine 9:
+    ```
+  - The array isn’t full. Both goroutines attempt to update the **same index** of the backing array (index 1), which is a data race ⚠️.
+- To solve this issue, we can make a copy and uses `append` on the copied slice. This prevents a data race because both goroutines work on isolated data.
+
+🎯 Data races with slices and maps
+
+- How much do data races impact slices and maps? When we have multiple goroutines the following is true:
+    - Accessing the same slice index with at least one goroutine updating the value is a data race. The goroutines access the same memory location.
+    - Accessing different slice indices regardless of the operation isn’t a data race; different indices mean different memory locations.
+    - Accessing the same map (regardless of whether it’s the same or a different key) with at least one goroutine updating it is a data race. Why is this different from a slice data structure? As we mentioned in chapter 3, a map is an array of buckets, and each bucket is a pointer to an array of key-value pairs. A hashing algorithm is used to determine the array index of the bucket. Because this algorithm contains some randomness during the map initialization, one execution may lead to the same array index, whereas another execution may not. The race detector handles this case by raising a warning regardless of whether an actual data race occurs.
+
+#### #70: Using mutexes inaccurately with slices and maps
