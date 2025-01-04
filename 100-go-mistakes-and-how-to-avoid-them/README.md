@@ -2213,3 +2213,44 @@ up the channel size according to the limit 👍.
 - Another point to consider is the one mentioned in a 2011 white paper about [LMAX Disruptor](https://lmax-exchange.github.io/disruptor/files/Disruptor-1.0.pdf):
     > Queues are typically always close to full or close to empty due to the differences in pace between consumers and producers. They very rarely operate in a balanced middle ground where the rate of production and consumption is evenly matched
 - So, it’s rare to find a channel size that will be steadily accurate, meaning an accurate value that won’t lead to too much contention or a waste of memory allocation.
+
+### #68: Forgetting about possible side effects with string formatting
+
+- Let's demonstrate with this first example how one formatting a key from a context can lead to a **data race**:
+    ```go
+    func (w *watcher) Watch(ctx context.Context, key string, opts ...OpOption) WatchChan {
+        ctxKey := fmt.Sprintf("%v", ctx) // Formats the map key depending on the provided context
+        wgs := w.streams[ctxKey]
+    ```
+- When formatting a string from a context created with values (`context.WithValue`), Go will read **all the values** in this context.
+  - In this case, the *etcd* developers found that the context provided to `Watch` was a context containing mutable values (for example, a pointer to a struct) in some conditions.
+  - They found a case where one goroutine was updating one of the context values, whereas another was executing `Watch`, hence reading all the values in this context.
+  - ⚠️ This led to a data race.
+- The [fix](https://github.com/etcd-io/etcd/pull/7816) was to not rely on `fmt.Sprintf` to format the map’s key to prevent traversing and reading the chain of wrapped values in the context. Instead, the solution was to implement a custom `streamKeyFromCtx` function to extract the key from a specific context value that **wasn’t mutable**.
+- The second example deals with a `Customer` struct that can be accessed **concurrently**:
+    ```go
+    type Customer struct {
+        mutex sync.RWMutex
+        id string
+        age int
+    }
+    func (c *Customer) UpdateAge(age int) error {
+        c.mutex.Lock()
+        defer c.mutex.Unlock()
+        if age < 0 {
+            return fmt.Errorf("age should be positive for customer %v", c)
+        }
+        c.age = age
+        return nil
+    }
+
+    func (c *Customer) String() string {
+        c.mutex.RLock()
+        defer c.mutex.RUnlock()
+        return fmt.Sprintf("id %s, age %d", c.id, c.age)
+    }
+    ```
+- If the provided `age` is negative, we return an error. Because the error is formatted, using the `%s` directive on the receiver, it will call the `String` method
+to format `Customer`. But because `UpdateAge` already acquires the mutex lock, the `String` method won’t be able to acquire it.
+- ⚠️ Hence, this leads to a deadlock situation. (That's why we should create unit tests also for edge cases 🧠).
+- In our case, locking the mutex only after the age has been checked avoids the deadlock situation or we change the way we format the error so that it doesn’t call the `String` method.
