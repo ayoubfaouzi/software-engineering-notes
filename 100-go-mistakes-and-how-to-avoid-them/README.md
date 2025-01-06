@@ -2288,3 +2288,21 @@ to format `Customer`. But because `UpdateAge` already acquires the mutex lock, t
     - Accessing the same map (regardless of whether it’s the same or a different key) with at least one goroutine updating it is a data race. Why is this different from a slice data structure? As we mentioned in chapter 3, a map is an array of buckets, and each bucket is a pointer to an array of key-value pairs. A hashing algorithm is used to determine the array index of the bucket. Because this algorithm contains some randomness during the map initialization, one execution may lead to the same array index, whereas another execution may not. The race detector handles this case by raising a warning regardless of whether an actual data race occurs.
 
 #### #70: Using mutexes inaccurately with slices and maps
+
+- Consider the example below:
+    ```go
+    func (c *Cache) AverageBalance() float64 {
+        c.mu.RLock()
+        balances := c.balances
+        c.mu.RUnlock()
+
+        sum := 0.
+        for _, balance := range balances {
+            sum += balance
+        }
+        return sum / float64(len(balances))
+    }
+    ```
+- If we run a test using the `-race` flag with two concurrent goroutines, one calling `AddBalance` and another calling `AverageBalance`, a data race occurs.
+The reason is that `balances := c.balances` (same for a slice) creates a new slice that has the same length and the same capacity and is backed by the same array as `c.balances` ⚠️.
+- There are two leading solutions to prevent this: **protect the whole function**, or work on a **deep copy** of the actual data.
