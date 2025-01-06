@@ -2306,3 +2306,36 @@ to format `Customer`. But because `UpdateAge` already acquires the mutex lock, t
 - If we run a test using the `-race` flag with two concurrent goroutines, one calling `AddBalance` and another calling `AverageBalance`, a data race occurs.
 The reason is that `balances := c.balances` (same for a slice) creates a new slice that has the same length and the same capacity and is backed by the same array as `c.balances` ⚠️.
 - There are two leading solutions to prevent this: **protect the whole function**, or work on a **deep copy** of the actual data.
+
+### #71: Misusing sync.WaitGroup
+
+- Consider the example below:
+    ```go
+    wg := sync.WaitGroup{}
+    var v uint64
+    for i := 0; i < 3; i++ {
+        go func() {
+            wg.Add(1)
+            atomic.AddUint64(&v, 1)
+            wg.Done()
+        }()
+    }
+    wg.Wait()
+    fmt.Println(v)
+    ```
+- If we run this example, we get a non-deterministic value: the code can print any value from 0 to 3. Also, if we enable the `-race `flag, Go will even catch a data race. How is this possible, given that we are using the `sync/atomic` package to update v? What’s wrong with this code?
+- The problem is that `wg.Add(1)` is called within the newly created goroutine, not in the parent goroutine. Hence, there is no guarantee that we have indicated to the wait group that we want to wait for three goroutines before calling `wg.Wait()` 🤷.
+- When dealing with goroutines, it’s crucial to remember that the execution **isn’t deterministic without synchronization**. For example, the following code could print either `ab or ba`:
+    ```go
+    go func() {
+        fmt.Print("a")
+    }()
+    go func() {
+        fmt.Print("b")
+    }()
+    ```
+- Both goroutines can be assigned to different threads, and there’s no guarantee which thread will be executed first.
+- The CPU has to use a **memory fence** (also called a memory barrier) to ensure order. Go provides different synchronization techniques for implementing memory fences: for example, `sync.WaitGroup` enables a **happens-before** relationship between `wg.Add` and `wg.Wait`.
+- There are two options to fix our issue:
+  - First, we can call `wg.Add` before the loop with 3: `wg.Add(3)`.
+  - Or, second, we can call `wg.Add` during each loop iteration **before spinning** up the child goroutines.
