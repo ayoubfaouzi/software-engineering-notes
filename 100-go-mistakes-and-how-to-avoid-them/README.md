@@ -2339,3 +2339,73 @@ The reason is that `balances := c.balances` (same for a slice) creates a new sli
 - There are two options to fix our issue:
   - First, we can call `wg.Add` before the loop with 3: `wg.Add(3)`.
   - Or, second, we can call `wg.Add` during each loop iteration **before spinning** up the child goroutines.
+
+### #72: Forgetting about sync.Cond
+
+- The example in this section implements a donation goal mechanism: an application that raises alerts whenever specific goals are reached. We will have one goroutine in charge of incrementing a balance (an updater goroutine). In contrast, other goroutines will receive updates and print a message whenever a specific goal is reached (listener goroutines).
+    ```go
+    // Listener goroutines
+    f := func(goal int) {
+        donation.mu.RLock()
+        for donation.balance < goal {
+            donation.mu.RUnlock()
+            donation.mu.RLock()
+        }
+        fmt.Printf("$%d goal reached\n", donation.balance)
+        donation.mu.RUnlock()
+    }
+    ```
+- The main issue—and what makes this a terrible implementation—is the **busy loop**. Each listener goroutine keeps looping until its donation goal is met, which wastes a lot of CPU cycles and makes the CPU usage gigantic 🤒.
+- If we think about **signaling in Go**, we should consider **channels**. So, let’s try another version using the channel primitive:
+    ```go
+    // Listener goroutines
+    f := func(goal int) {
+        for balance := range donation.ch {
+            if balance >= goal {
+                fmt.Printf("$%d goal reached\n", balance)
+                return
+            }
+        }
+    }
+    ```
+    - A message sent to a channel is received by only one goroutine.
+    - The default distribution mode with multiple goroutines receiving from a **shared channel** is **round-robin**. It can change if one goroutine isn’t **ready** to receive messages; in that case, Go distributes the message to the next available goroutine.
+    - Only a **channel closure** event can be **broadcast** to multiple goroutines. But here we don’t want to close the channel, because then the updater goroutine couldn’t send messages.
+    - Another issue is that the listener goroutines return whenever their donation goal is met. Hence, the updater goroutine has to know when all the listeners stop receiving messages to the channel. Otherwise, the channel will eventually become **full** and **block** the sender.
+- Ideally, we need to find a way to repeatedly broadcast notifications whenever the balance is updated to multiple goroutines. Fortunately, Go has a solution: `sync.Cond`:
+    ```go
+    // Listener goroutines
+    f := func(goal int) {
+        donation.cond.L.Lock()
+        for donation.balance < goal {
+            donation.cond.Wait()
+        }
+        fmt.Printf("%d$ goal reached\n", donation.balance)
+        donation.cond.L.Unlock()
+    }
+    // Updater goroutine
+    for {
+        time.Sleep(time.Second)
+        donation.cond.L.Lock()
+        donation.balance++
+        donation.cond.L.Unlock()
+        donation.cond.Broadcast() // wakes all the goroutines waiting on the condition.
+    }
+    ```
+- The call to `Wait` must happen within a critical section, which may sound odd 😶‍🌫️ Won’t the lock prevent other goroutines from waiting for the same condition? Actually, the implementation of `Wait` is the following:
+    1 Unlock the mutex 🌝.
+    2 Suspend the goroutine, and wait for a notification.
+    3 Lock the mutex when the notification arrives.
+
+> Let’s also note one possible drawback when using sync.Cond. When we send a notification—for example, to a chan struct—even if there’s no active receiver, the message is buffered, which guarantees that this notification will be received eventually. Using `sync.Cond` with the Broadcast method wakes all goroutines currently waiting on the condition; if there are none, the notification will be **missed**.
+
+🧠 `Signal()` vs. `Broadcast()`:
+
+> We can wake a single goroutine using Signal() instead of Broadcast(). In terms of semantics, it is the same as sending a message in a chan struct in a non-blocking fashion:
+```go
+ch := make(chan struct{})
+select {
+    case ch <- struct{}{}:
+    default:
+}
+```
