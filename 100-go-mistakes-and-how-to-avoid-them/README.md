@@ -2475,3 +2475,20 @@ func handler(ctx context.Context, circles []Circle) ([]Result, error) {
     - Calling a method with a value receiver (as we have seen)
     - Calling a function with a `sync` argument
     - Calling a function with an argument that contains a `sync` field.
+
+## Chapter 10: The Standard Library
+
+### #75: Providing a wrong time duration
+
+- The standard library provides common functions and methods that accept a `time.Duration`. However, because `time.Duration` is an alias for the `int64` type, newcomers to the language can get confused and provide a wrong duration.
+- `time.Duration` represents the elapsed time between two instants in **nanoseconds**. Therefore, we provided `NewTicker` with a duration of `1,000 nanoseconds = 1 microsecond`.
+- This mistake happens frequently. Indeed, standard libraries in languages such as *Java* and *JavaScript* sometimes ask developers to provide durations in `milliseconds`.
+- Furthermore, if we want to purposely create a `time.Ticker` with an interval of 1 microsecond, we shouldn’t pass an `int64` directly. We should instead always use the `time.Duration` API to avoid possible confusion:
+    ```go
+    ticker = time.NewTicker(time.Microsecond)
+    // Or
+    ticker = time.NewTicker(1000 * time.Nanosecond)
+    ```
+
+### #76: time.After and memory leaks
+
