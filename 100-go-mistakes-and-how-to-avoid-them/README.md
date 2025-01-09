@@ -2393,9 +2393,9 @@ The reason is that `balances := c.balances` (same for a slice) creates a new sli
     }
     ```
 - The call to `Wait` must happen within a critical section, which may sound odd 😶‍🌫️ Won’t the lock prevent other goroutines from waiting for the same condition? Actually, the implementation of `Wait` is the following:
-    1 Unlock the mutex 🌝.
-    2 Suspend the goroutine, and wait for a notification.
-    3 Lock the mutex when the notification arrives.
+    1. Unlock the mutex 🌝.
+    2. Suspend the goroutine, and wait for a notification.
+    3. Lock the mutex when the notification arrives.
 
 > Let’s also note one possible drawback when using sync.Cond. When we send a notification—for example, to a chan struct—even if there’s no active receiver, the message is buffered, which guarantees that this notification will be received eventually. Using `sync.Cond` with the Broadcast method wakes all goroutines currently waiting on the condition; if there are none, the notification will be **missed**.
 
@@ -2409,3 +2409,35 @@ select {
     default:
 }
 ```
+
+### #73: Not using errgroup
+
+- `golang.org/x` is a repository providing extensions to the standard library. The *sync* sub-repository contains a handy package: `errgroup`.
+- It exports a single `WithContext` function that returns a `*Group` struct given a context. This struct provides **synchronization**, **error propagation**, and *context cancellation* for a group of goroutines and exports only two methods:
+    - `Go` to trigger a call in a new goroutine.
+    - `Wait` to block until all the goroutines have completed. It returns the first non-nil error, if any.
+```go
+func handler(ctx context.Context, circles []Circle) ([]Result, error) {
+    results := make([]Result, len(circles))
+    g, ctx := errgroup.WithContext(ctx)
+    for i, circle := range circles {
+        i := i
+        circle := circle
+        g.Go(func() error {
+            result, err := foo(ctx, circle)
+            if err != nil {
+                return err
+            }
+            results[i] = result
+            return nil
+        })
+
+    if err := g.Wait(); err != nil {
+        return nil, err
+    }
+    return results, nil
+}
+```
+- This solution is inherently more straightforward as we don’t have to rely on extra concurrency primitives, and the `errgroup.Group` is sufficient to tackle our use case.
+- When want to return an error, if any. Hence, there’s no point in waiting until the second and third calls are complete.
+  - Using `errgroup.WithContext` creates a shared context used in all the parallel calls. Because the first call returns an error in 1ms, it will cancel the context and thus the other goroutines. So, we won’t have to wait 5 seconds to return an error 👍. This is another benefit when using `errgroup`.
