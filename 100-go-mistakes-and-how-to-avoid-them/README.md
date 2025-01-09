@@ -2441,3 +2441,37 @@ func handler(ctx context.Context, circles []Circle) ([]Result, error) {
 - This solution is inherently more straightforward as we don’t have to rely on extra concurrency primitives, and the `errgroup.Group` is sufficient to tackle our use case.
 - When want to return an error, if any. Hence, there’s no point in waiting until the second and third calls are complete.
   - Using `errgroup.WithContext` creates a shared context used in all the parallel calls. Because the first call returns an error in 1ms, it will cancel the context and thus the other goroutines. So, we won’t have to wait 5 seconds to return an error 👍. This is another benefit when using `errgroup`.
+
+### #74: Copying a sync type
+
+- The `sync` package provides basic synchronization primitives such as mutexes, condition variables, and wait groups. For all these types, there’s a hard rule to follow: they should never be **copied** ⚠️.
+    ```go
+    type Counter struct {
+        mu sync.Mutex
+        counters map[string]int
+    }
+
+    func NewCounter() Counter {
+        return Counter{counters: map[string]int{}}
+    }
+
+    func (c Counter) Increment(name string) {
+        c.mu.Lock()
+        defer c.mu.Unlock()
+        c.counters[name]++
+    }
+    ```
+- If we run this example, it raises a data race !
+- The problem in our `Counter` implementation is that the **mutex is copied**. Because the receiver of `Increment` is a value, whenever we call `Increment`, it performs a copy of the `Counter` struct, which also copies the mutex. Therefore, the increment isn't done in a shared critical section.
+- `sync` types shouldn’t be copied. This rule applies to the following types:
+  - sync.Cond
+  - sync.Map
+  - sync.Mutex
+  - sync.RWMutex
+  - sync.Once
+  - sync.Pool
+  - sync.WaitGroup
+- We may face the issue of unintentionally copying a `sync` field in the following conditions:
+    - Calling a method with a value receiver (as we have seen)
+    - Calling a function with a `sync` argument
+    - Calling a function with an argument that contains a `sync` field.
