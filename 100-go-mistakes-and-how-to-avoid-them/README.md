@@ -2492,3 +2492,46 @@ func handler(ctx context.Context, circles []Circle) ([]Result, error) {
 
 ### #76: time.After and memory leaks
 
+- `time.After(time.Duration)` is a convenient function that returns a channel and waits for a provided duration to elapse before sending a message to this channel.
+- It can be used to implement scenarios such as “*If I don’t receive any message in this channel for 5 seconds, I will … .*” But codebases often include calls to `time.After` in a loop, which may be a root cause of **memory leaks**.
+- Here is a possible implementation:
+    ```go
+    func consumer(ch <-chan Event) {
+        for {
+            select {
+            case event := <-ch:
+                handle(event)
+            case <-time.After(time.Hour):
+                log.Println("warning: no messages received")
+            }
+        }
+    }
+    ```
+- We may expect this channel to be closed during each loop iteration, but this isn’t the case ⚠️.
+  - The resources created by `time.After` (including the channel) are released once the timeout expires and use memory until that happens.
+  - How much memory? In `Go 1.15`, about *200 bytes* of memory are used per call to `time.After`.
+  - If we receive a significant volume of messages, such as 5 million per hour, our application will consume 1 GB of memory to store the `time.After` resources.
+- One possible fix is to use a context instead, like `ctx, cancel := context.WithTimeout(context.Background(), time.Hour)`. The 👎 of this approach is that we have to **re-create** a context during every single loop iteration. Creating a context isn’t the most lightweight operation in Go: for example, it **requires creating a channel**. Can we do better?
+- The second option comes from the `time` package: `time.NewTimer`. This function creates a t`ime.Timer` struct that exports the following:
+    - A `C` field, which is the internal timer channel
+    - A `Reset(time.Duration)` method to reset the duration
+    - A `Stop()` method to stop the timer.
+- Let’s implement a new version using `time.NewTimer`:
+  ```go
+  func consumer(ch <-chan Event) {
+    timerDuration := 1 * time.Hour
+    timer := time.NewTimer(timerDuration)
+    defer timer.Stop()
+    for {
+        timer.Reset(timerDuration)
+        select {
+        case event := <-ch:
+            handle(event)
+        case <-timer.C:
+            log.Println("warning: no messages received")
+        }
+    }
+  }
+  ```
+
+### #77: Common JSON-handling mistakes
