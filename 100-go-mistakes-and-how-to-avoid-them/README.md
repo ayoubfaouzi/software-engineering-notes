@@ -2535,3 +2535,76 @@ func handler(ctx context.Context, circles []Circle) ([]Result, error) {
   ```
 
 ### #77: Common JSON-handling mistakes
+
+#### Unexpected behavior due to type embedding
+
+- Let’s consider the following example:
+    ```go
+    event := Event{
+        ID: 1234,
+        Time: time.Now(),
+    }
+    b, err := json.Marshal(event)
+    if err != nil {
+        return err
+    }
+    fmt.Println(string(b))
+    ```
+- We may expect this code to print something like the following:
+    ```json
+    {"ID":1234,"Time":"2021-05-18T21:15:08.381652+02:00"}
+    ```
+- Instead, it prints this: `"2021-05-18T21:15:08.381652+02:00"`. What happened to the `ID` field and the `1234` value? 🤒.
+- First, as discussed in *mistake #10*, if an embedded field type implements an interface, the struct containing the embedded field will also implement this interface.
+`time.Time` implements the `json.Marshaler` interface. Because `time.Time` is an embedded field of `Event`, the compiler promotes its methods. Therefore, `Event` also implements `json.Marshaler`.
+- We would also face the issue the other way around if we were unmarshaling an `Event` using `json.Unmarshal`.
+- To fix this issue, there are two main possibilities. First, we can add a name so the
+`time.Time` field is no longer **embedded**, or the other option is to make `Event` implement the `json.Marshaler` interface:
+```go
+func (e Event) MarshalJSON() ([]byte, error) {
+    return json.Marshal(
+        struct {
+            ID int
+            Time time.Time
+        }{
+            ID: e.ID,
+            Time: e.Time,
+        },
+    )
+}
+```
+
+#### JSON and the monotonic clock
+
+- An OS handles two different clock types: wall and monotonic:
+  - The wall clock is used to determine the **current time of day**. This clock is subject to variations. For example, if the clock is synchronized using *NTP*, it can jump backward or forward in time. We shouldn’t measure durations using the wall clock because we may face strange behavior, such as **negative durations**.
+  - The monotonic clock guarantees that time always moves forward and is not impacted by jumps in time.
+- If you JSON marshall a `time.Time` then un-marshall it, you loose the monotonic part.
+    ```sh
+    2021-01-10 17:13:08.852061 +0100 CET m=+0.000338660
+    2021-01-10 17:13:08.852061 +0100 CET
+    ```
+- So if you try to compare two time object later using `==`, it will fail.
+- To avoid this, we can use the `Equal` method instead:
+    ```go
+    fmt.Println(event1.Time.Equal(event2.Time))
+    ```
+- We can also strip away the monotonic time using the `Truncate` method then use `==`:
+    ```go
+    event1 := Event{
+        Time: t.Truncate(0),
+    }
+    ```
+
+#### Map of any
+
+- There’s an important gotcha to remember if we use a map of `any`: any numeric value, regardless of whether it contains a decimal, is converted into a `float64` type 😶.
+-  We can observe this by printing the type of `m["id"]`:
+```go
+fmt.Printf("%T\n", m["id"])
+float64
+```
+- We should be sure we don’t make the wrong assumption and expect numeric values
+without decimals to be converted into integers by default ⚠️.
+
+### #78: Common SQL mistakes
