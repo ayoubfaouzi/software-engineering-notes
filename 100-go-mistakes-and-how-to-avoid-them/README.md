@@ -2608,3 +2608,55 @@ float64
 without decimals to be converted into integers by default ⚠️.
 
 ### #78: Common SQL mistakes
+
+#### Forgetting that sql.Open doesn’t necessarily establish connections to a database
+
+- The behavior depends on the SQL driver used. For some drivers, `sql.Open` doesn’t establish a connection: it’s only a preparation for later use (for example, with `db.Query`). Therefore, the first connection to the database may be established **lazily**.
+- Why it matters? For example, in some cases, we want to make a service ready only after we know that all the dependencies are correctly **set up and reachable**. If we don’t know this, the service may **accept traffic** despite an erroneous configuration.
+- 👍 Use `Ping` to force establishing a connection that ensures that the data source name is valid and the database is reachable.
+
+#### Forgetting about connections pooling
+
+- `sql.Open` returns an `*sql.DB` struct. This struct **doesn’t** represent a **single database connection**; instead, it represents a pool of connections.
+- A connection in the pool can have two states:
+  - Already used (for example, by another goroutine that triggers a query)
+  - Idle (already created but not in use for the time being)
+- It’s also important to remember that creating a pool leads to four available config parameters that we may want to override. Each of these parameters is an exported method of `*sql.DB`:
+  - `SetMaxOpenConns` — Maximum number of open connections to the database (default value: unlimited)
+  - `SetMaxIdleConns` — Maximum number of idle connections (default value: 2)
+  - `SetConnMaxIdleTime` — Maximum amount of time a connection can be idle before it’s closed (default value: unlimited)
+  - `SetConnMaxLifetime` — Maximum amount of time a connection can be held open before it’s closed (default value: unlimited)
+<p align="center"><img src="./assets/sql-open-connections.png" width="500px" height="auto"></p>
+
+So, why should we tweak these config parameters?
+  - Setting `SetMaxOpenConns` is important for production-grade applications. Because the default value is unlimited, we should set it to make sure it **fits** what the underlying **database can handle**.
+  - The value of `SetMaxIdleConns` (default: 2) should be increased if our application generates a significant number of **concurrent** requests. Otherwise, the application may experience frequent **reconnects**.
+  - Setting `SetConnMaxIdleTime` is important if our application may face a **burst of requests**. When the application returns to a more peaceful state, we want to make sure the connections created are eventually **released**.
+  - Setting `SetConnMaxLifetime` can be helpful if, for example, we connect to a **load-balanced** database server. In that case, we want to ensure that our application never uses a connection for too long.
+
+#### Not using prepared statements
+
+- A **prepared** statement is a feature implemented by many SQL databases to execute a **repeated SQL** statement. Internally, the SQL statement is **precompiled** and separated from the data provided. There are two main benefits:
+  - 👍 **Efficiency** — The statement doesn’t have to be recompiled (compilation means **parsing + optimization + translation**).
+  - 👍 **Security** — This approach reduces the risks of **SQL injection attacks**.
+
+#### Mishandling null values
+
+- When we execute a sql query and iterate over the rows, we use `Scan` to copy the column into the values pointed to by the variables that receives the values.
+- If the value retrieved is `NULL`, the SQL driver raises an error in `Scan()`.  There are two options to fix this issueL
+    - Declare the variable (`X`) as a string(for example) pointer. By doing so, if the value is `NULL`, `X` will be `nil`.
+    - The other approach is to use one of the `sql.NullXXX` types, such as `sql.NullString`.
+- `sql.NullString` is a wrapper on top of a string. It contains two exported fields:
+  - `String` contains the string value, and `Valid` conveys whether the string isn’t `NULL`.
+
+#### Not handling row iteration errors
+
+- We have to know that the for rows `.Next() {}` loop can break either when there are no more rows or when an error happens while preparing the next row. Following a row iteration, we should call `rows.Err` to distinguish between the two cases:
+    ```go
+        for rows.Next() {
+            // ...
+        }
+        if err := rows.Err(); err != nil {
+            return "", 0, err
+        }
+    }
