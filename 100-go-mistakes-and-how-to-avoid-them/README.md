@@ -2660,3 +2660,57 @@ So, why should we tweak these config parameters?
             return "", 0, err
         }
     }
+
+### #79: Not closing transient resources
+
+It is important it is to close ephemeral resources and thus avoid leaks. Ephemeral resources must be closed at the right time and in specific situations. It’s not always clear up front what has to be closed. We can only acquire this information by carefully reading the API documentation and/or through experience. But we should remember that if a struct implements the `io.Closer` interface, we must eventually call the `Close` method 👍.
+
+####  HTTP body
+
+- resp is an `*http.Response` type. It contains a Body `io.ReadCloser` field. This body must be closed if `http.Get` doesn’t return an error; otherwise, it’s a **resource leak**.
+- On the **server** side, while implementing an HTTP handler, we aren’t required to close the request body because the server does this **automatically**.
+- We should also understand that a response body must be closed regardless of whether we read it ⚠️. For example, if we are only interested in the HTTP status code and not in the body, it has to be closed no matter what, to avoid a leak.
+- Another essential thing to remember is that the behavior is different when we close the body, depending on whether we have read from it:
+  - If we close the body without a read, the default HTTP transport may close the connection.
+  - If we close the body following a read, the default HTTP transport won’t close the connection; hence, it may be **reused**.
+  - Therefore, if `getStatusCode` is called repeatedly and we want to use **keep-alive** connections, we should read the body even though we aren’t interested in it:
+  ```go
+  _, _ = io.Copy(io.Discard, resp.Body) // reads the body but discards it without any copy, making it more efficient than io.ReadAll.
+  ```
+
+#### sql.Rows
+
+- Forgetting to close the rows means a **connection leak**, which prevents the database connection from being put back into the connection pool.
+
+#### os.File
+
+- If we don’t eventually close an `os.File`, it will not lead to a leak per se: the file will be **closed automatically** when `os.File` is **garbage collected**. However, it’s better to call `Close` explicitly because we don’t know when the next GC will be triggered (unless we manually run it).
+- There’s another benefit of calling `Close` **explicitly**: to actively monitor the error that is returned. For example, this should be the case with writable files.
+- Writing to a file descriptor **isn’t a synchronous** operation. For performance concerns, data is buffered. The *BSD* manual page for close(2) mentions that a closure can lead to an error in a previously **uncommitted write** (still living in a buffer) encountered during an I/O error. For that reason, if we want to write to a file, we should propagate any error that occurs while closing the file:
+    ```go
+    func writeToFile(filename string, content []byte) (err error) {
+        // Open file ...
+        defer func() {
+            closeErr := f.Close()
+            if err == nil {
+                err = closeErr
+            }
+        }()
+        _, err = f.Write(content)
+        return
+    }
+    ```
+- Furthermore, success while closing a writable `os.File` doesn’t guarantee that the file will be written on disk. The write can still live in a buffer on the filesystem and not be flushed on disk. If durability is a critical factor, we can use the `Sync()` method to **commit** a change. In that case, errors coming from `Close` can be safely ignored:
+    ```go
+    func writeToFile(filename string, content []byte) error {
+        // Open file ...
+        defer func() {
+            _ = f.Close()
+        }()
+        _, err = f.Write(content)
+        if err != nil {
+            return err
+        }
+        return f.Sync()
+    }
+    ```
