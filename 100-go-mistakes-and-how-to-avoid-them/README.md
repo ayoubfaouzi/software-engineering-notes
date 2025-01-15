@@ -2714,3 +2714,16 @@ It is important it is to close ephemeral resources and thus avoid leaks. Ephemer
         return f.Sync()
     }
     ```
+
+### #80: Forgetting the return statement after replying to an HTTP request
+
+- Remember that `http.Error` doesn’t stop a handler execution and must be added manually:
+    ```go
+    func handler(w http.ResponseWriter, req *http.Request) {
+        err := foo(req)
+        if err != nil {
+            http.Error(w, "foo", http.StatusInternalServerError)
+            return  //  <-- without a return, it may lead to a nil pointer dereference (and hence a goroutine panic).
+    }
+    // ...
+    ```
