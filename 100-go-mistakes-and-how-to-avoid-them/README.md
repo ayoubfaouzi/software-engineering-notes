@@ -2727,3 +2727,47 @@ It is important it is to close ephemeral resources and thus avoid leaks. Ephemer
     }
     // ...
     ```
+
+### #81: Using the default HTTP client and server
+
+#### HTTP client
+
+- What’s the problem with using the default HTTP client?
+  - It doesn’t specify any **timeouts**. This absence of timeout is not something we want for production-grade systems: it can lead to many issues, such as never-ending requests that could exhaust system resources.
+- The five steps during an HTTP request, and the related timeouts: <p align="center"><img src="./assets/http-client-timeout.png" width="500px" height="auto"></p>
+- Here’s an example of an HTTP client that overrides these timeouts:
+    ```go
+    client := &http.Client{
+        Timeout: 5 * time.Second,
+        Transport: &http.Transport{
+        DialContext: (&net.Dialer{Timeout: time.Second,}).DialContext,
+        TLSHandshakeTimeout: time.Second,
+        ResponseHeaderTimeout: time.Second,
+        },
+    }
+    ```
+- The second aspect to bear in mind about the default HTTP client is how connections are handled. By default, the HTTP client does **connection pooling**.
+  - There is an extra timeout (`http.Transport.IdleConnTimeout`) to specify how long an idle connection is kept in the pool. The default value is 90 seconds, which means the connection can be reused for other requests during this time. After that, if the connection hasn’t been reused, it will be closed.
+  - To configure the **number of connections in the pool**, we must override `http.Transport.MaxIdleConns`. This value is set to *100* by default. But there’s something important to note: the `http.Transport.MaxIdleConnsPerHost` limit per host, which by default is set to 2.
+  - For example, if we trigger 100 requests to the same host, only 2 connections will remain in the connection pool after that. Hence, if we trigger 100 requests again, we will have to reopen at least 98 connections. This configuration can also impact the **average latency** if we have to deal with a significant number of **parallel requests** to the same host.
+
+#### HTTP server
+
+- The five steps of an HTTP response, and the related timeouts: p align="center"><img src="./assets/http-server-timeout.png" width="500px" height="auto"></p>
+- While exposing our endpoint to untrusted clients, the best practice is to set at least the `http.Server.ReadHeaderTimeout` field and use the `http.TimeoutHandler` wrapper function. Otherwise, clients may exploit this flaw and, for example, create **never-ending connections** that can lead to exhaustion of system resources.
+- Here’s an example of an HTTP server that overrides these timeouts:
+    ```go
+    s := &http.Server{
+        Addr: ":8080",
+        ReadHeaderTimeout: 500 * time.Millisecond,
+        ReadTimeout: 500 * time.Millisecond,
+        Handler: http.TimeoutHandler(handler, time.Second, "foo"),
+    }
+    ```
+- Just as we described regarding HTTP clients, on the server side we can configure the maximum amount of time for the next request when **keep-alives** are enabled. We do so using `http.Server.IdleTimeout`:
+    ```go
+    s := &http.Server{
+        // ...
+        IdleTimeout: time.Second,
+    }
+    ```
