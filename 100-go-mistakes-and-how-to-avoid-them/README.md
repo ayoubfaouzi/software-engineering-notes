@@ -2811,3 +2811,30 @@ It is important it is to close ephemeral resources and thus avoid leaks. Ephemer
     }
     ```
 - Then run `go test -short -v .`  to skip the test.
+
+### #83: Not enabling the -race flag
+
+- In Go, the race detector isn’t a static analysis tool used during compilation; instead, it’s a tool to find data races that occur at runtime. To enable it, we have to enable the -race flag while compiling or running a test. For example:
+```sh
+$ go test -race ./...
+```
+- In production, we should avoid it (or only use it in the case of **canary** releases, for example) because:
+  - Memory usage may increase by 5 to 10x
+  - Execution time may increase by 2 to 20x
+- 🗒️ Internally, the race detector uses **vector clocks**, a data structure used to determine a **partial ordering** of events.
+  - Each goroutine creation leads to the creation of a vector clock.
+  - The instrumentation updates the vector clock at each memory access and synchronization event.
+  - Then, it compares the vector clocks to detect potential data races.
+- The race detector cannot catch a false positive (an apparent data race that isn’t a real one). Therefore, we know our code contains a data race if we get a warning. Conversely, it can sometimes lead to false negatives (missing actual data races) 🤐.
+- We need to note two things regarding testing:
+  - First, the race detector can only be **as good as our tests**. Thus, we should ensure that concurrent code is tested thoroughly
+against data races.
+  - Second, given the possible **false negatives**, if we have a test to check data races, we can put this logic inside a **loop**. Doing so increases the chances of catching possible data races:
+  ```go
+    func TestDataRace(t *testing.T) {
+        for i := 0; i < 100; i++ {
+            // Actual logic
+        }
+    }
+    ```
+- In addition, if a specific file contains tests that lead to data races, we can exclude it from race detection using the `!race` build tag.
