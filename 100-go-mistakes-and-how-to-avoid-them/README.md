@@ -2753,7 +2753,7 @@ It is important it is to close ephemeral resources and thus avoid leaks. Ephemer
 
 #### HTTP server
 
-- The five steps of an HTTP response, and the related timeouts: p align="center"><img src="./assets/http-server-timeout.png" width="500px" height="auto"></p>
+- The five steps of an HTTP response, and the related timeouts: <p align="center"><img src="./assets/http-server-timeout.png" width="500px" height="auto"></p>
 - While exposing our endpoint to untrusted clients, the best practice is to set at least the `http.Server.ReadHeaderTimeout` field and use the `http.TimeoutHandler` wrapper function. Otherwise, clients may exploit this flaw and, for example, create **never-ending connections** that can lead to exhaustion of system resources.
 - Here’s an example of an HTTP server that overrides these timeouts:
     ```go
@@ -2771,3 +2771,43 @@ It is important it is to close ephemeral resources and thus avoid leaks. Ephemer
         IdleTimeout: time.Second,
     }
     ```
+
+## Chapter 11: testing
+
+### #82: Not categorizing tests
+
+- Usually, as we go further up the pyramid, tests become more complex to write and slower to run, and it is more difficult to guarantee their **determinism**: <p align="center"><img src="./assets/tests-pyramid.png" width="200px" height="auto"></p>
+- A common technique is to be **explicit** about which **kind of tests** to run.
+
+#### Build tags
+
+- The most common way to classify tests is using **build tag**s. A build tag is a special comment at the beginning of a Go file, followed by an empty line: `//go:build foo`.
+- we can use a build tag as a **conditional** option to build an application:
+  - for example, if we want a source file to be included only if cgo is enabled: `//go:build cgo`.
+  - Second, if we want to categorize a test as an **integration** test, we can add a specific build flag, such as integration.
+- Then execute: `go test --tags=integration -v .`.
+- If we want to run only integration tests? A possible way is to add a **negation** tag on the unit test files. For example, using `!integration` means we want to include the test file only if the integration flag is not enabled  `//go:build !integration`.
+
+#### Environment variables
+
+- Build tags have one main 👎: the **absence of signals** that a test has been **ignored** (see http://mng.bz/qYlr).
+- For that reason, some projects favor the approach of checking the test category using **environment variables**.
+    ```go
+    func TestInsert(t *testing.T) {
+        if os.Getenv("INTEGRATION") != "true" {
+            t.Skip("skipping integration test")
+        }
+    }
+    ```
+
+#### Short mode
+
+- If we like to categorize the slow test so we don’t have to run it every time. **Short mode** allows us to make this distinction:
+    ```go
+    func TestLongRunning(t *testing.T) {
+        if testing.Short() {
+            t.Skip("skipping long-running test")
+        }
+    }
+    ```
+- Then run `go test -short -v .`  to skip the test.
