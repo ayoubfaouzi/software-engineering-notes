@@ -2865,3 +2865,56 @@ against data races.
     ```sh
     go test -shuffle=1636399552801504000 -v .
     ```
+
+### #85: Not using table-driven tests
+
+- Table-driven tests are an efficient technique for writing **condensed tests** and thus **reducing boilerplate code** to help us focus on what matters.
+- Table-driven tests rely on subtests, and a single test function can include multiple subtests. For example, the following test contains two subtests:
+    ```go
+    func TestFoo(t *testing.T) {
+        t.Run("subtest 1", func(t *testing.T) {
+            if false {
+                t.Error()
+            }
+        })
+        t.Run("subtest 2", func(t *testing.T) {
+            if 2 != 2 {
+                t.Error()
+            }
+        })
+    }
+    ```
+- We can also run a single test using the `-run` flag and concatenating the parent test name with the subtest. For example, we can run only subtest 1:
+    ```sh
+    $ go test -run=TestFoo/subtest_1 -v
+    ```
+- Table-driven tests **avoid boilerplat**e code by using a data structure containing test data together with subtests. Here’s a possible implementation using a map:
+    ```go
+    func TestRemoveNewLineSuffix(t *testing.T) {
+    tests := map[string]struct {
+        input string
+        expected string
+    }{
+    `empty`: {
+        input: "",
+        expected: "",
+    },
+    `ending with \r\n`: {
+        input: "a\r\n",
+        expected: "a",
+    },
+    ...
+    ```
+- This test solves two drawbacks:
+    - 👍 Each test name is now a string instead of a **PascalCase** function name, making it simpler to read.
+    - 👍 The logic is written only once and shared for all the different cases. Modifying the testing structure or adding a new test requires minimal effort.
+- When running subtests inside a loop using `Parallel`, we should create another variable or shadow `tt`:
+    ```go
+    for name, tt := range tests {
+        tt := tt
+        t.Run(name, func(t *testing.T) {
+            t.Parallel()
+            // Use tt
+        })
+    }
+    ```
