@@ -2838,3 +2838,30 @@ against data races.
     }
     ```
 - In addition, if a specific file contains tests that lead to data races, we can exclude it from race detection using the `!race` build tag.
+
+### #84: Not using test execution modes
+
+- **Parallel execution mode** allows us to run specific tests in parallel, which can be very useful: for example, **to speed up long-running** tests. We can mark that a test has to be run in parallel by calling `t.Parallel`:
+    ```go
+    func TestFoo(t *testing.T) {
+        t.Parallel()
+        // ...
+    }
+    ```
+  - When we mark a test using `t.Parallel`, it is executed in parallel alongside all the other parallel tests.
+  - In terms of execution, though, Go first runs all the **sequential tests** one by one. Once the sequential tests are completed, it executes the parallel tests.
+  - By default, the maximum number of tests that can run simultaneously equals the `GOMAXPROCS` value. To serialize tests or, for example, increase this number in the context of long-running tests doing a lot of I/O, we can change this value using the `-parallel` flag:
+    ```sh
+    $ go test -parallel 16 .
+    ```
+- A best practice while writing tests is to make them isolated. For example, they **shouldn’t depend on execution order** or shared variables.
+    - These hidden dependencies can mean a possible test error or, even worse, a bug that won’t be caught during testing.
+    - To prevent that, we can use the `-shuffle` flag to **randomize tests**.
+    - We can set it to on or off to enable or disable test shuffling (its disabled by default):
+    ```sh
+    $ go test -shuffle=on -v .
+    ```
+    - To force the tests to be run in the same order, we provide the **seed** value to shuffle:
+    ```sh
+    go test -shuffle=1636399552801504000 -v .
+    ```
