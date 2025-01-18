@@ -2918,3 +2918,44 @@ against data races.
         })
     }
     ```
+
+### #86: Sleeping in unit tests
+
+- Flaky tests are among the biggest hurdles in testing because they are expensive to debug and undermine our confidence in testing accuracy.
+- Calling `time.Sleep` in a test can be a **signal** of possible flakiness.
+- Let's look at an example:
+    ```go
+    func TestGetBestFoo(t *testing.T) {
+        mock := publisherMock{}
+        h := Handler{
+            publisher: &mock, n: 2,
+        }
+        foo := h.getBestFoo(42)
+        // Check foo
+        time.Sleep(10 * time.Millisecond)
+        published := mock.Get()
+        // Check published
+    }
+    ```
+- This test is inherently flaky. There is no strict guarantee that *10ms* will be enough (in this example, it is likely but **not guaranteed)**.
+- So, what are the options to improve this unit test? First We can periodically assert a given condition using **retries**:
+    - We can write a function that takes an assertion as an argument and a maximum number of retries plus a wait time that is called periodically to avoid a **busy loop**:
+        ```go
+        func assert(t *testing.T, assertion func() bool, maxRetry int, waitTime time.Duration) {
+            for i := 0; i < maxRetry; i++ {
+                if assertion() {
+                    return
+                }
+                time.Sleep(waitTime)
+            }
+            t.Fail()
+        }
+        ```
+        - Instead of sleeping for *10ms*, we sleep each millisecond and configure a maximum number of retries. Such an approach **reduces** the execution time if the test succeeds because we reduce the waiting interval 👍.
+    - Another strategy is to use **channels** to synchronize the goroutine publishing the `Foo` structs and the testing goroutine.
+      - The publisher sends the received argument to a channel. Meanwhile, the testing goroutine sets up the mock and creates the assertion based on the received value.
+      - We can also **implement** a timeout strategy to make sure we don’t wait forever for `mock.ch` if something goes wrong. For example, we can use select with a `time.After` case.
+- Indeed, synchronization **reduces waiting time** to the bare minimum and makes a test fully deterministic if well designed.
+- If synchronization is truly impossible, we should use the retry option, which is a better choice than using passive sleeps to eradicate non-determinism in tests.
+
+### #87: Not dealing with the time API efficiently
