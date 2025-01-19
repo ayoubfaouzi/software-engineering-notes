@@ -2959,3 +2959,62 @@ against data races.
 - If synchronization is truly impossible, we should use the retry option, which is a better choice than using passive sleeps to eradicate non-determinism in tests.
 
 ### #87: Not dealing with the time API efficiently
+
+- In general, we should be cautious about testing code that uses the time API. It can be an open door for **flaky** tests.
+- Imagine we implement unit tests for a in-memory cache of application received events:
+    ```go
+    func TestCache_TrimOlderThan(t *testing.T) {
+        events := []Event{
+            {Timestamp: time.Now().Add(-20 * time.Millisecond)},
+            {Timestamp: time.Now().Add(-10 * time.Millisecond)},
+            {Timestamp: time.Now().Add(10 * time.Millisecond)},
+        }
+        cache := &Cache{}
+        cache.Add(events)
+        cache.TrimOlderThan(15 * time.Millisecond)
+        got := cache.GetAll()
+        expected := 2
+        if len(got) != expected {
+            t.Fatalf("expected %d, got %d", expected, len(got))
+        }
+    }
+    ```
+- Such an approach has one main 👎: if the machine executing the test is **suddenly busy**, we may trim fewer events than expected. We might be able to increase the duration provided to reduce the chance of having a failing test, but doing so isn’t always possible.
+- The first approach is to make the way to retrieve the current time a dependency of the `Cache` struct. In production, we would **inject the real** implementation, whereas in unit tests, we would pass a **stub**, for example:
+    ```go
+    func TestCache_TrimOlderThan(t *testing.T) {
+        events := []Event{
+            {Timestamp: parseTime(t, "2020-01-01T12:00:00.04Z")},
+            {Timestamp: parseTime(t, "2020-01-01T12:00:00.05Z")},
+            {Timestamp: parseTime(t, "2020-01-01T12:00:00.06Z")},
+        }
+        cache := &Cache{
+            now: func() time.Time {return parseTime(t, "2020-01-01T12:00:00.06Z")}
+        }
+        cache.Add(events)
+        cache.TrimOlderThan(15 * time.Millisecond)
+        // ...
+    }
+    ```
+- This approach has one main drawback: the `now` dependency isn’t available if we, for example, create a unit test from an **external** package.
+- In that case, we can use another technique. Instead of handling the time as an unexported dependency, we can ask clients to provide the current time:
+    ```go
+    func (c *Cache) TrimOlderThan(now time.Time, since time.Duration) {
+        // ...
+    }
+    ```
+- To go even further, we can **merge** the two function arguments in a single time.Time that represents a specific point in time until which we want to trim the events:
+    ```go
+    func (c *Cache) TrimOlderThan(t time.Time) {
+        // ...
+    }
+    ```
+- And in the test, we also have to pass the corresponding time:
+    ```go
+    func TestCache_TrimOlderThan(t *testing.T) {
+        // ...
+        cache.TrimOlderThan(parseTime(t, "2020-01-01T12:00:00.06Z").Add(-15 * time.Millisecond))
+        // ...
+    }
+    ```
+- This approach is the simplest because it doesn’t require creating another type and a stub.
