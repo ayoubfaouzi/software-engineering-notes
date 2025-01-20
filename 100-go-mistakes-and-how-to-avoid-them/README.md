@@ -3018,3 +3018,68 @@ against data races.
     }
     ```
 - This approach is the simplest because it doesn’t require creating another type and a stub.
+
+### #88: Not using testing utility packages
+
+#### The httptest package
+
+- The [httptest package](https://pkg.go.dev/net/http/httptest) provides utilities for HTTP testing for both clients and servers. Let’s look at these two use cases.
+- An HTTP handler accepts two arguments: the request and a way to write the response.
+```go
+func TestHandler(t *testing.T) {
+    req := httptest.NewRequest(http.MethodGet, "http://localhost", strings.NewReader("foo")) // Build the request
+    w := httptest.NewRecorder() // Creates the response recorder.
+    Handler(w, req)
+    if got := w.Result().Header.Get("X-API-VERSION"); got != "1.0" {
+        t.Errorf("api version: expected 1.0, got %s", got)
+    }
+    body, _ := ioutil.ReadAll(wordy)
+    if got := string(body); got != "hello foo" {
+        t.Errorf("body: expected hello foo, got %s", got)
+    }
+    if http.StatusOK != w.Result().StatusCode {
+        t.FailNow()
+    }
+}
+```
+- Testing a handler using `httptest` doesn’t test the **transport** (the HTTP part). The focus of the test is calling the handler directly with a request and a way to record the response. Then, using the response recorder, we write the assertions to verify the HTTP header, body, and status code.\
+- What if we want to test this client? One option is to use Docker and spin up a **mock server** to return some preregistered responses. However, this approach makes the test **slow** to execute.
+- The other option is to use `httptest.NewServer` to create a local HTTP server based on a handler that we will provide. Once the server is up and running, we can pass its URL to `GetDuration`.
+    ```go
+    func TestDurationClientGet(t *testing.T) {
+        srv := httptest.NewServer(
+            http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                _, _ = w.Write([]byte(`{"duration": 314}`))
+            },),
+        )
+        defer srv.Close()
+        client := NewDurationClient()
+        duration, err := client.GetDuration(srv.URL, 51.551261, -0.1221146, 51.57, -0.13)
+        if err != nil {
+            t.Fatal(err)
+        }
+        if duration != 314*time.Second {
+            t.Errorf("expected 314 seconds, got %v", duration)
+        }
+    }
+    ```
+- Compared to testing a handler, this test performs an **actual HTTP call**, but it executes in only a few **milliseconds**.
+
+#### The iotest package
+
+- The [iotest package](https://pkg.go.dev/testing/iotest) implements utilities for testing readers and writers.
+- When implementing a custom `io.Reader`, we should remember to test it using `iotest.TestReader`. This utility function tests that a reader behaves correctly: it accurately returns the number of bytes read, fills the provided slice, and so on. It also tests different behaviors if the provided reader implements interfaces such as `io.ReaderAt`.
+    ```go
+    func TestLowerCaseReader(t *testing.T) {
+        err := iotest.TestReader(
+            &LowerCaseReader{reader: strings.NewReader("aBcDeFgHiJ")}, io.Reader([]byte("acegi")))
+    if err != nil {
+        t.Fatal(err)
+    }
+    ```
+- Another use case for the `iotest` package is to make sure an application using readers and writers is tolerant to errors:
+  - `iotest.ErrReader` creates an `io.Reader` that returns a provided error.
+  - `iotest.HalfReader` creates an `io.Reader` that reads only half as many bytes as requested from an io.Reader.
+  - `iotest.OneByteReader` creates an `io.Reader` that reads a single byte for each non-empty read from an io.Reader.
+  - `iotest.TimeoutReader` creates an `io.Reader` that returns an error on the second read with no data. Subsequent calls will succeed.
+  - `iotest.TruncateWriter` creates an `io.Writer` that writes to an `io.Writer` but stops silently after `n` bytes.
