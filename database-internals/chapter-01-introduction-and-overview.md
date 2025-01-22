@@ -67,13 +67,12 @@ monotonically incremented number)
 - Storing values for different columns in separate files or file segments allows efficient queries by column, since they can be **read in one pass** rather than consuming entire rows and discarding data for columns that weren’t queried 🤷.
 - Column-oriented stores are a good fit for analytical workloads that **compute aggregates**, such as *finding trends*, *computing average values*, etc.
 - Processing complex aggregates can be used in cases when logical records have multiple fields, but some of them (in this case, price quotes) have different importance and are often consumed together.
-
-Values belonging to the same row are stored closely together:
-| Rows |
-|---|
-| Symbol: 1:DOW; 2:DOW; 3:S&P; 4:S&P |
-| Date: 1:08 Aug 2018; 2:09 Aug 2018; 3:08 Aug 2018; 4:09 Aug 2018 |
-| Price: 1:24,314.65; 2:24,136.16; 3:2,414.45; 4:2,232.32 |
+- Values belonging to the same row are stored closely together:
+  | Rows                                                             |
+  | ---------------------------------------------------------------- |
+  | Symbol: 1:DOW; 2:DOW; 3:S&P; 4:S&P                               |
+  | Date: 1:08 Aug 2018; 2:09 Aug 2018; 3:08 Aug 2018; 4:09 Aug 2018 |
+  | Price: 1:24,314.65; 2:24,136.16; 3:2,414.45; 4:2,232.32          |
 - To reconstruct data tuples, which might be useful for joins, filtering, and multi-row aggregates, we need to preserve some **metadata** on the column level to identify which data points from other columns it is associated with. If you do this explicitly, each value will have to hold a **key**, which introduces duplication and increases the amount of stored data 🥶.
 - During the last several years, likely due to a rising demand to run complex analytical queries over growing datasets, we’ve seen many 🆕 column-oriented **file formats** such as *Apache Parquet*, *Apache ORC*, *RCFile*, as well as column-oriented stores, such as *Apache Kudu*, *ClickHouse*, and many others.
 
@@ -105,5 +104,40 @@ are grouped into **column families** (usually storing data of the same type), an
   - 👍 **Access efficiency** - Records can be located in the smallest possible number of steps.
   - 👍 **Update efficiency** - Record updates are performed in a way that minimizes the number of changes on disk.
 - A database system usually separates **data files** and **index files**: data files store **data records**, while index files store record **metadata** and use it to locate records in data files.
+- Files are partitioned into **pages**, which typically have the size of a single or multiple disk blocks. Pages can be organized as sequences of records or as a *slotted pages*.
 
 ### Data Files
+
+- Data files (sometimes called **primary files**) can be implemented as:
+  - **heap-organized tables (heap files)**: Records in heap files are not required to follow any particular **order**, and most of the time they are placed in a write order. This way, no additional work or file reorganization is required when new pages are appended. Heap files require additional index structures, pointing to the locations where data records are stored, to make them searchable.
+  - **hash-organized tables (hashed files)**: records are stored in **buckets**, and the hash value of the key determines which bucket a record belongs to. Records in the bucket can be stored in append order or sorted by key to improve lookup speed.
+  - **index-organized tables (IOT)**: store data records in the **index itself**. Since records are stored in key order, range scans in IOTs can be implemented by sequentially scanning its contents.
+
+### Index Files
+
+- An index on a primary (data) file is called the **primary index**. However, in most cases we can also assume that the primary index is built over a **primary key** or a **set of keys** identified as primary. All other indexes are called **secondary**.
+- Secondary indexes can point directly to the data record, or simply store its primary key.
+- If the order of data records follows the **search key order**, this index is called **clustered** (also known as clustering). Data records in the clustered case are usually stored in the same file or in a clustered file, where the key order is **preserved**.
+- If the data is stored in a **separate file**, and its order does not follow the key order, the index is called **non-clustered** (sometimes called **unclustered**).
+- 💁 Index-organized tables store information in index order and are clustered by definition. Primary indexes are most often clustered. Secondary indexes are nonclustered by definition, since they’re used to facilitate access by keys other than the primary one. Clustered indexes can be both index-organized or have separate index and data files.
+
+### Primary Index as an Indirection
+
+- There are different opinions in the database community on whether data records should be referenced directly (through file offset) or via the primary key index.
+- By referencing **data directly**:
+  - 👍 we can reduce the number of disk seeks,
+  - 👎 but have to pay a **cost of updating** the pointers whenever the record is updated or relocated during a maintenance process.
+- Using **indirection** in the form of a primary index allows us to:
+  - 👍 reduce the cost of **pointer updates**
+  - 👎 but has a higher cost on a **read path**.
+<p align="center"><img src="assets/primary-index-indirection.png" width="500px"></p>
+
+### Buffering, Immutability, and Ordering
+
+Storage structures have three common variables: they use **buffering** (or avoid using it), use **immutable** (or mutable) files, and store values in **order** (or out of order).
+- **Buffering**: This defines whether or not the storage structure chooses to collect a certain amount of data in memory before putting it on disk. Of course, every on-disk
+structure has to use buffering to **some degree**, since the smallest unit of data transfer to and from the disk is a block, and it is desirable to write **full blocks**. Here, we’re talking about avoidable buffering, something storage engine implementers choose to do.
+- **Mutability** (or immutability): This defines whether or not the storage structure reads parts of the file, updates them, and writes the updated results at the **same location** in the file.
+  - Immutable structures are **append-only**: once written, file contents are not modified.
+  - There are other ways to implement immutability. One of them is **copy-on-write**.
+- **Ordering**" This is defined as whether or not the data records are stored in the **key order** in the pages on disk. In other words, the keys that sort closely are stored in contiguous segments on disk. Ordering often defines whether or not we can efficiently scan the range of records, not only locate the individual data records. Storing data out of order (most often, in insertion order) opens up for some write-time optimizations. For example, *Bitcask* and *WiscKey* store data records directly in append-only files
