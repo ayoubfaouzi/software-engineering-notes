@@ -97,3 +97,13 @@ are grouped into **column families** (usually storing data of the same type), an
   - Column families store multiple versions of data by timestamp. This layout allows us to quickly locate the higher-level entries (web pages, in this case) and their parameters (versions of content and links to the other pages).
 
 ## Data Files and Index Files
+
+❓ Why do we need a database management system and **not just a bunch of files**? How does file organization improve efficiency? 🤔
+
+- Database systems do use files for storing the data, but instead of relying on **filesystem hierarchies** of directories and files for locating records, they compose files using **implementation-specific** formats. The main reasons to use specialized file organization over flat files are:
+  - 👍 **Storage efficiency** - Files are organized in a way that minimizes storage overhead per stored data record.
+  - 👍 **Access efficiency** - Records can be located in the smallest possible number of steps.
+  - 👍 **Update efficiency** - Record updates are performed in a way that minimizes the number of changes on disk.
+- A database system usually separates **data files** and **index files**: data files store **data records**, while index files store record **metadata** and use it to locate records in data files.
+
+### Data Files
