@@ -3083,3 +3083,100 @@ func TestHandler(t *testing.T) {
   - `iotest.OneByteReader` creates an `io.Reader` that reads a single byte for each non-empty read from an io.Reader.
   - `iotest.TimeoutReader` creates an `io.Reader` that returns an error on the second read with no data. Subsequent calls will succeed.
   - `iotest.TruncateWriter` creates an `io.Writer` that writes to an `io.Writer` but stops silently after `n` bytes.
+
+### #89: Writing inaccurate benchmarks
+
+- In general, we should never guess about performance 🧠.
+- **Not resetting or pausing the timer**:
+  - In some cases, we need to perform operations before the benchmark loop. These operations may take quite a while (for example, generating a large slice of data) and may significantly impact the benchmark results.
+  - In this case, we can use the `ResetTimer` method before entering the loop:
+      ```go
+      func BenchmarkFoo(b *testing.B) {
+          expensiveSetup()
+          b.ResetTimer()
+          for i := 0; i < b.N; i++ {
+              functionUnderTest()
+          }
+      }
+      ```
+  - What if we have to perform an expensive setup not just once but within **each loop iteration**?
+  - We can’t reset the timer, because that would be executed during each loop iteration. But we can stop and resume the benchmark timer, surrounding the call to `expensiveSetup`:
+      ```go
+      for i := 0; i < b.N; i++ {
+          b.StopTimer()
+          expensiveSetup()
+          b.StartTimer()
+          functionUnderTest()
+      }
+      ```
+- **Making wrong assumptions about micro-benchmarks**:
+  - Changing the order of execution of these 2 unit tests shows different results.
+    ```go
+    func BenchmarkAtomicStoreInt32(b *testing.B) {
+        var v int32
+        for i := 0; i < b.N; i++ {
+            atomic.StoreInt32(&v, 1)
+        }
+    }
+    func BenchmarkAtomicStoreInt64(b *testing.B) {
+        var v int64
+        for i := 0; i < b.N; i++ {
+            atomic.StoreInt64(&v, 1)
+        }
+    }
+ - In the case of micro-benchmarks, many factors can impact the results, such as **machine activity** while running the benchmarks, **power management**, **thermal scaling**, and better **cache alignment** of a sequence of instructions. We must remember that many factors, even outside the scope of our Go project, can impact the results.
+ - Tools such as *perflock* can limit how much CPU a benchmark can consume. For example, we can run a benchmark with 70% of the total available CPU, giving 30% to the OS and other processes and reducing the impact of the machine activity factor on the results 👍.
+ - One option is to increase the benchmark time using the `-benchtime` option. Similar to the **law of large numbers** in probability theory, if we run a benchmark a large number of times, it should tend to approach its expected value.
+ - Another option is to use external tools on top of the classic benchmark tooling. For instance, the *benchstat* tool, which is part of the golang.org/x repository, allows us to compute and compare statistics about benchmark executions.
+    ```sh
+    $ go test -bench=. -count=10 | tee stats.txt
+    cpu: Intel(R) Core(TM) i5-7360U CPU @ 2.30GHz
+    BenchmarkAtomicStoreInt32-4 234935682 5.124 ns/op
+    BenchmarkAtomicStoreInt32-4 235307204 5.112 ns/op
+    // ...
+
+    // We can then run benchstat on this file:
+    $ benchstat stats.txt
+    name time/op
+    AtomicStoreInt32-4 5.10ns ± 1%
+    AtomicStoreInt64-4 5.10ns ± 1%
+    ```
+- **Not being careful about compiler optimizations**:
+  - If the function we are testing is simple enough that the compile dedices to **inline** it, it can lead to wrong benchmark assumptions 🤒.
+  - To avoid compiler optimizations fooling benchmark results: assign the result of the function under test to a **local variable**, and then assign
+the latest result to a **global variable**:
+    ```go
+    var global uint64
+    func BenchmarkPopcnt2(b *testing.B) {
+        var v uint64
+        for i := 0; i < b.N; i++ {
+            v = popcnt(uint64(i))
+        }
+        global = v
+    }
+    ```
+- **Being fooled by the observer effect**:
+  - Imagine we want to benchmark a function that sums the first 8 columns of a matrix of 512 columns, and we want to know whether varying the number
+of columns has an impact to decide which one is the most performant given a fixed number of rows:
+```go
+func calculateSum512(s [][512]int64) int64 {
+    var sum int64
+    for i := 0; i < len(s); i++ {
+        for j := 0; j < 8; j++ {
+            sum += s[i][j]
+        }
+    }
+    return sum
+}
+func calculateSum513(s [][513]int64) int64 {
+// Same implementation as calculateSum512
+}
+```
+- We want to create the matrix only once, to limit the footprint on the results. Therefore, we call `createMatrix512` and `createMatrix513` outside of the loop. We may expect the results to be similar as again we only want to iterate on the first eight columns, but this isn’t the case (on my machine) 😶‍🌫️:
+```sh
+cpu: Intel(R) Core(TM) i5-7360U CPU @ 2.30GHz
+BenchmarkCalculateSum512-4 81854 15073 ns/op
+BenchmarkCalculateSum513-4 161479 7358 ns/op
+```
+- The second benchmark with 513 columns is about **50% faster** 🤔:
+- The main issue is that we keep **reusing** the same matrix in both cases. Because the function is repeated **thousands of times**, we don’t measure the function’s execution when it receives a plain new matrix. Instead, we measure a function that gets a matrix that already has a subset of the cells present in the **cache**. Therefore, because `calculateSum513` leads to fewer **cache misses**, it has a better execution time 🤪.
