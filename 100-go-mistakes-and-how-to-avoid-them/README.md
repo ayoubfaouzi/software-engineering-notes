@@ -3158,25 +3158,92 @@ the latest result to a **global variable**:
 - **Being fooled by the observer effect**:
   - Imagine we want to benchmark a function that sums the first 8 columns of a matrix of 512 columns, and we want to know whether varying the number
 of columns has an impact to decide which one is the most performant given a fixed number of rows:
-```go
-func calculateSum512(s [][512]int64) int64 {
-    var sum int64
-    for i := 0; i < len(s); i++ {
-        for j := 0; j < 8; j++ {
-            sum += s[i][j]
+    ```go
+    func calculateSum512(s [][512]int64) int64 {
+        var sum int64
+        for i := 0; i < len(s); i++ {
+            for j := 0; j < 8; j++ {
+                sum += s[i][j]
+            }
         }
+        return sum
     }
-    return sum
-}
-func calculateSum513(s [][513]int64) int64 {
-// Same implementation as calculateSum512
-}
-```
+    func calculateSum513(s [][513]int64) int64 {
+        // Same implementation as calculateSum512
+    }
+    ```
 - We want to create the matrix only once, to limit the footprint on the results. Therefore, we call `createMatrix512` and `createMatrix513` outside of the loop. We may expect the results to be similar as again we only want to iterate on the first eight columns, but this isn’t the case (on my machine) 😶‍🌫️:
-```sh
-cpu: Intel(R) Core(TM) i5-7360U CPU @ 2.30GHz
-BenchmarkCalculateSum512-4 81854 15073 ns/op
-BenchmarkCalculateSum513-4 161479 7358 ns/op
-```
+    ```sh
+    cpu: Intel(R) Core(TM) i5-7360U CPU @ 2.30GHz
+    BenchmarkCalculateSum512-4 81854 15073 ns/op
+    BenchmarkCalculateSum513-4 161479 7358 ns/op
+    ```
 - The second benchmark with 513 columns is about **50% faster** 🤔:
 - The main issue is that we keep **reusing** the same matrix in both cases. Because the function is repeated **thousands of times**, we don’t measure the function’s execution when it receives a plain new matrix. Instead, we measure a function that gets a matrix that already has a subset of the cells present in the **cache**. Therefore, because `calculateSum513` leads to fewer **cache misses**, it has a better execution time 🤪.
+
+### #90: Not exploring all the Go testing features
+
+#### Code coverage
+
+- During the development process, it can be handy to see visually which parts of our code are covered by tests. We can access this information using the `-coverprofile` flag:
+    ```sh
+    go test -coverprofile=coverage.out ./...
+    ```
+- This command creates a `coverage.out` file that we can then open using go tool cover:
+    ```sh
+    $ go tool cover -html=coverage.out
+    ```
+
+#### Testing from a different package
+
+- We may want our tests to focus on what’s visible from the outside (exposed APIs), not the implementation details. This way, if the implementation
+changes (for example, if we refactor one function into two), the tests will remain the same.
+- To follow this pattern, we can place our tests in a external package, for example under `tests/counter_test.go`. By doing so, we make sure we cannot access **internal** variables/methods, hence we will focus on testing the **exposed behavior**.
+
+#### Utility functions
+
+- Imagine a situation where you have to create a customer in every single test and fail the tests if there are errors.
+- Instead of repeating the code, we can create the `createCustomer` utility function, and then we perform the rest of the test. We can simplify error management by passing the `*testing.T` variable to the utility function:
+    ```go
+    func createCustomer(t *testing.T, someArg string) Customer {
+        // Create customer
+        if err != nil {
+            t.Fatal(err)
+        }
+        return customer
+    }
+
+    func TestCustomer(t *testing.T) {
+        customer := createCustomer(t, "foo")
+        // ...
+    }
+    ```
+
+#### Setup and teardown
+
+- We can call setup and teardown functions per test or per package. Fortunately, in Go, both are possible 👍.
+- To do so per test, we can call the setup function as a preaction and the teardown function using defer:
+    ```go
+    func TestMySQLIntegration(t *testing.T) {
+        setupMySQL()
+        defer teardownMySQL()
+    // ...
+    }
+    ```
+- It’s also possible to register a function to be executed at the end of a test:
+    ```go
+    t.Cleanup(func() {
+        _ = db.Close()
+    })
+    ```
+- Note that we can register **multiple cleanup** functions. In that case, they will be executed just as if we were using defer: **last in**, **first out**.
+- To handle setup and teardown **per package**, we have to use the `TestMain` function.
+- This particular function accepts a `*testing.M` argument that exposes a single `Run()` to run all the tests. Therefore, we can surround this call with setup and teardown functions:
+    ```go
+    func TestMain(m *testing.M) {
+        setupMySQL()
+        code := m.Run()
+        teardownMySQL()
+        os.Exit(code)
+    }
+    ```
