@@ -32,3 +32,51 @@ are allocated contiguously ) that makes the CPU **fetch fewer cache lines** from
   - In this example, this stride is called a **critical stride**: it leads to accessing memory addresses with the same set index that are hence stored to the same cache set.
   - Let’s come back to our real-world example with the two functions calculateSum512 and calculateSum513. The benchmark was executed on a `32 KB` eight-way set-associative L1D cache: 64 sets total. Because a cache line is `64 bytes`, the critical stride equals 64 × 64 bytes = `4 KB`. Four KB of `int64` types represent `512` elements.
   - ➡️ Therefore, we reach a critical stride with a matrix of **512 columns**, so we have a **poor caching distribution**. Meanwhile, if the matrix contains **513 columns**, it doesn’t lead to a critical stride. This is why we observed such a massive difference between the two benchmarks 😵‍💫.
+
+## #92: Writing concurrent code that leads to false sharing
+
+- To illustrate the concept of false sharing, we use two structs, `Input` and `Result`:
+    ```go
+    type Input struct {
+        a int64
+        b int64
+    }
+    type Result struct {
+        sumA int64
+        sumB int64
+    }
+    ```
+- We spin up two goroutines: one that iterates over each `a` field and another that iterates over each `b` field:
+    ```go
+    go func() {
+        for i := 0; i < len(inputs); i++ {
+            result.sumA += inputs[i].a
+        }
+        wg.Done()
+    }()
+    go func() {
+        for i := 0; i < len(inputs); i++ {
+            result.sumB += inputs[i].b
+        }
+        wg.Done()
+    }()
+    ```
+- Because `sumA` and `sumB` are allocated contiguously, in most cases (seven out of eight), both variables are allocated to the **same memory block**. <p align="center"><img src="./assets/false-sharing-same-block.png" width="300px" height="auto"></p>
+- Now, let’s assume that the machine contains two cores. In most cases, we should eventually have two threads scheduled on different cores. So if the CPU decides to copy this memory block to a cache line, it is copied twice: <p align="center"><img src="./assets/cache-line-copy-multi-core.png" width="400px" height="auto"></p>
+- Both cache lines are replicated because L1D is per core. Recall that in our example, each goroutine updates its own variable: `sumA` on one side, and `sumB` on the other side.
+- Because these cache lines are **replicated**, one of the goals of the CPU is to **guarantee cache coherency**. For example, if one goroutine updates `sumA` and another reads `sumA` (after some synchronization), we expect our application to get the latest value.
+- However, our example doesn’t do exactly this. Both goroutines access their own variables, not a shared one. We might expect the CPU to know about this and understand that it **isn’t a conflict**, but this isn’t the case 🤷‍♂️.
+- When we write a variable that’s in a cache, the **granularity** tracked by the CPU isn’t the variable: it’s the **cache line**.
+- When a cache line is **shared** across **multiple cores** and at least one goroutine is a **writer**, the **entire cache line** is **invalidated**. - This happens even if the updates are logically independent (for example, `sumA` and `sumB`). This is the problem of false sharing, and it degrades performance ⚠️.
+- So how do we solve false sharing? There are two main solutions.
+    - The first solution is to use the same approach we’ve shown but ensure that `sumA` and `sumB` aren’t part of the same cache line. For example, we can update the `Result` struct to add **padding** between the fields:
+        ```go
+        type Result struct {
+            sumA int64
+            _ [56]byte
+            sumB int64
+        }
+        ```
+        - Using padding, `sumA` and `sumB` will always be part of different memory blocks and hence **different cache lines**.
+        - If we benchmark both solutions (with and without padding), we see that the padding solution is **significantly faster** (about 40% on my machine) 😮‍💨.
+    - The second solution is to **rework the structure** of the algorithm. For example, instead of having both goroutines share the same struct, we can make them communicate their local result via channels.
