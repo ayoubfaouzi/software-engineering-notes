@@ -80,3 +80,40 @@ are allocated contiguously ) that makes the CPU **fetch fewer cache lines** from
         - Using padding, `sumA` and `sumB` will always be part of different memory blocks and hence **different cache lines**.
         - If we benchmark both solutions (with and without padding), we see that the padding solution is **significantly faster** (about 40% on my machine) 😮‍💨.
     - The second solution is to **rework the structure** of the algorithm. For example, instead of having both goroutines share the same struct, we can make them communicate their local result via channels.
+
+## #93: Not taking into account instruction-level parallelism
+
+- CPU designers stopped focusing solely on **clock speed** to improve CPU performance. They developed multiple optimizations, including **ILP (Instruction-Level Parallelism)**.
+- If we have a sequence of 3 instructions:
+  - If executed sequentially, this would have taken the following time: `total time = t(I1) + t(I2) + t(I3)`.
+  - Thanks to ILP, the total time is the following: `total time = max(t(I1), t(I2), t(I3))`.
+- ILP looks 🤹‍♂️, theoretically. But it leads to a few challenges called **hazards**:
+  - For example, what if `I3` sets a variable to 42 but `I2` is a conditional instruction. In theory, this scenario should prevent executing `I2` and `I3` in parallel. This is called a **control hazard** or **branching hazard**. In practice, CPU designers solved control hazards using **branch prediction**.
+  - For example, if `I1` adds the numbers in registers A and B to C and `I2` adds the numbers in registers C and D to D. Because `I2` depends on the outcome of `I1` concerning the value of register C, the two instructions cannot be executed simultaneously ➡️ **data hazard**.
+    - CPU designers have come up with a trick called **forwarding** that basically bypasses writing to a register. This technique doesn’t solve the problem but rather tries to alleviate the effects 🤷.
+  - There are also **structural hazards**, when at least two instructions in the pipeline need the **same resource**. As Go developers, we can’t really impact these kinds of hazards.
+- Let’s get back to our initial problem and focus on the content of the loop:
+    ```go
+    s[0]++
+    if s[0]%2 == 0 {
+        s[1]++
+    }
+    ```
+- If we highlight the hazards between the instructions, we get: <p align="center"><img src="./assets/hazards-between-instructions.png" width="400px" height="auto"></p>
+    - The only independent instructions are the `s[0]` check and the `s[1]` increment, so these two instruction sets can be executed in parallel thanks to branch prediction. <p align="center"><img src="./assets/ilp-v1.png" width="300px" height="auto"></p>
+
+- Can we improve our code to minimize the number of data hazards ❓ Let’s write another version that introduces a **temporary variable**:
+    ```go
+    v := s[0]
+    s[0] = v + 1
+    if v%2 != 0 {
+        s[1]++
+    }
+    ```
+<p align="center"><img src="./assets/hazards-between-instructions_improved.png" width="400px" height="auto"></p>
+
+- The significant difference is regarding the data hazards: the `s[0]` increment step and the check `v` step now depend on the **same instruction** (`read s[0] into v`).
+- Why does this matter? Because it allows the CPU to increase the level of parallelism:
+<p align="center"><img src="./assets/ilp-v2.png" width="300px" height="auto"></p>
+
+- Despite having the same number of steps, the second version increases how many steps can be executed in parallel: three parallel routes instead of two. Meanwhile, the execution time should be optimized because the longest path has been reduced. If we benchmark these two functions, we see a significant **speed improvement** for the second version (about 20% on my machine), mainly because of ILP.
