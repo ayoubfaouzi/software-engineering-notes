@@ -117,3 +117,42 @@ are allocated contiguously ) that makes the CPU **fetch fewer cache lines** from
 <p align="center"><img src="./assets/ilp-v2.png" width="300px" height="auto"></p>
 
 - Despite having the same number of steps, the second version increases how many steps can be executed in parallel: three parallel routes instead of two. Meanwhile, the execution time should be optimized because the longest path has been reduced. If we benchmark these two functions, we see a significant **speed improvement** for the second version (about 20% on my machine), mainly because of ILP.
+
+## #94: Not being aware of data alignment
+
+- Suppose we allocate two variables, an `int32` (32 bytes) and an `int64` (64 bytes):
+    ```go
+    var i int32
+    var j int64
+    ```
+- Without data alignment, on a 64-bit architecture, these two variables could be allocated as below:
+    <p align="center"><img src="./assets/bad-data-alignment.png" width="200px" height="auto"></p>
+
+- The `j` variable allocation could be spread over two words. If the CPU wanted to read `j`, it would require **two memory accesses** instead of one.
+- To prevent such a case, a variable’s memory address should be a **multiple** of its own **size**. This is the concept of **data alignment**. In Go, the alignment is guaranteed for common variable types such as: `byte`, `float64`, `complex128`, ..
+- During the compilation, the Go compiler adds **padding** to guarantee data alignment:
+    ```go
+    type Foo struct {
+        b1 byte
+        _ [7]byte // Added by the compiler
+        i int64
+        b2 byte
+        _ [7]byte // Added by the compiler, because a struct’s size must be a multiple of the word size (8 bytes)
+    }
+    ```
+- Every time a `Foo` struct is created, it requires **24 bytes** in memory, but only **10 bytes** contain data—the remaining 14 bytes are padding ❗
+- Because a struct is an **atomic unit**, it will never be **reorganized**, even after a GC; it will always occupy 24 bytes in memory.
+- Note that the compiler **doesn’t rearrange** the fields; it only adds padding to guarantee data alignment.
+- How can we reduce the amount of memory allocated? The rule of thumb is to reorganize a struct so that its fields are **sorted by type size** in descending order 👍.
+- Besides the size overhead of padding, if we created `Foo` variables frequently and they were allocated to the heap, the result would be more frequent GCs, impacting overall application performance ⚠️.
+- Speaking of performance, there’s another effect on **spatial locality**:
+    ```go
+    // Consider the example of iterating over the slice and sums all the i fields.
+    for i := 0; i < len(foos); i++ {
+        s += foos[i].i
+    }
+    ```
+  - Each gray bar represents 8 bytes of data, and the darker bars are the i variables.
+    <p align="center"><img src="./assets/padding-and-spacial-locality.png" width="500px" height="auto"></p>
+  - Because each cache line contains more `i` variables, iterating over a slice of `Foo` requires fewer cache lines total.
+  - ➡️  Each cache line is more useful because it contains on average **33%** more `i` variables. Therefore, iterating over a `Foo` slice to sum all the int64 elements is more efficient 👍.
