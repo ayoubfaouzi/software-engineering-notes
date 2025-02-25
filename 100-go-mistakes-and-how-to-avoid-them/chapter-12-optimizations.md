@@ -177,8 +177,7 @@ are allocated contiguously ) that makes the CPU **fetch fewer cache lines** from
 - The stack is **self-cleaning**, and is accessed by a single goroutine. Conversely, the heap must be cleaned by an external system: the **GC**.
 - The more heap allocations are made, the more we **pressure** the GC. When the GC runs, it uses **25%** of the available CPU capacity and may create milliseconds of “*stop the world*” latency (the phase when an application is paused).
 - We must also understand that allocating on the stack is **faster** for the Go runtime because it’s trivial: a pointer references the following available memory address. Conversely, allocating on the heap requires more effort to find the right place and hence takes more time.
-- 
-    > 💡 This example shows that using pointers to avoid a copy **isn’t necessarily faster**; it depends on the context. So far in this book, we have only discussed values versus pointers via the prism of semantics: using a pointer when a value has to be **shared**. In most cases, this should be the rule to follow. Also bear in mind that modern CPUs are extremely efficient at copying data, especially within the same cache line. Let’s avoid premature optimization and focus on readability and semantics first.
+> 💡 This example shows that using pointers to avoid a copy **isn’t necessarily faster**; it depends on the context. So far in this book, we have only discussed values versus pointers via the prism of semantics: using a pointer when a value has to be **shared**. In most cases, this should be the rule to follow. Also bear in mind that modern CPUs are extremely efficient at copying data, especially within the same cache line. Let’s avoid premature optimization and focus on readability and semantics first.
 - **Escape analysis** refers to the work performed by the compiler to decide whether a variable should be allocated on the stack or the heap. Let’s look at the main rules.
   - When an allocation cannot be done on the stack, it is done on the heap. Even though this sounds like a simplistic rule, it’s important to remember 🤷.
   - For example, if the compiler cannot prove that a variable isn’t **referenced** after a function returns, this variable is allocated on the heap.
@@ -209,3 +208,62 @@ are allocated contiguously ) that makes the CPU **fetch fewer cache lines** from
     ...
     ./main.go:12:2: z escapes to heap:
     ```
+
+## #96: Not knowing how to reduce allocations
+
+- We discuss three common approaches to reduce allocations:
+    - Changing our API
+    - Relying on compiler optimizations
+    - Using tools such as `sync.Pool`.
+
+### API changes
+
+- Let’s take as a concrete example the `io.Reader` interface:
+    ```go
+    type Reader interface {
+        Read(p []byte) (n int, err error)
+    }
+    ```
+- The Go designers used the sharing-down approach to prevent **automatically escaping** the slice to the heap. Therefore, it’s up to the **caller** to provide a slice.
+- That doesn’t necessarily mean this slice won’t be escaped: the compiler may have decided that this slice cannot stay on the stack. However, it’s up to the caller to handle it, not a constraint caused by calling the `Read` method.
+
+### Compiler optimizations
+
+- In Go, we can’t define a map using a slice as a key type. In some cases, especially in applications doing I/O, we may receive `[]byte` data that we would like to use as a key. We are obliged to transform it into a string first, so we can write the following code:
+    ```go
+    func (c *cache) get(bytes []byte) (v int, contains bool) {
+        key := string(bytes)
+        v, contains = c.m[key]
+        return
+    }
+    ```
+- However, the Go compiler implements a specific optimization if we query the map using `string(bytes)`:
+    ```go
+    func (c *cache) get(bytes []byte) (v int, contains bool) {
+        v, contains = c.m[string(bytes)]
+        return
+    }
+    ```
+- Despite this being almost the same code (we call `string(bytes)` directly instead of passing a variable), the compiler will avoid doing this **bytes-to-string** conversion. Hence, the second version is faster than the first.
+
+### sync.Pool
+
+- If we **frequently allocate** many objects of the **same type**, we can consider using `sync.Pool`. It is a set of temporary objects that can help us prevent reallocating the same kind of data repeatedly. And `sync.Pool` is safe for use by multiple goroutines simultaneous.
+- We define a new pool using the `sync.Pool` struct and set the factory function to create a new `[]byte` with a length of *1,024* elements. In the `write` function, we try to retrieve one buffer from the pool.
+- If the pool is **empty**, the function creates a **new buffer**; otherwise, it selects an arbitrary buffer from the pool and returns it.
+- One crucial step is to reset the buffer using `buffer[:0]`, as this slice may already have been used. Then we defer the call to `Put` to put the slice back into the pool.
+- With this version, calling `write` doesn’t lead to creating a new `[]byte` slice for **every call**. Instead, we can **reuse** existing allocated slices. In the worst-case scenario — for example, after a GC — the function will create a new buffer; however, the amortized allocation cost is reduced.
+    ```go
+    var pool = sync.Pool{
+        New: func() any {
+            return make([]byte, 1024)
+        },
+    }
+    func write(w io.Writer) {
+        buffer := pool.Get().([]byte)
+        buffer = buffer[:0]
+        defer pool.Put(buffer)
+        getResponse(buffer)
+        _, _ = w.Write(buffer)
+    }
+```
