@@ -266,4 +266,37 @@ are allocated contiguously ) that makes the CPU **fetch fewer cache lines** from
         getResponse(buffer)
         _, _ = w.Write(buffer)
     }
-```
+    ```
+
+## #97: Not relying on inlining
+
+- If we run go build using `-gcflags`, we access the decision made by the compiler regarding inlining a function:
+    ```sh
+    $ go build -gcflags "-m=2"
+    ./main.go:10:6: can inline sum with cost 4 as:
+    func(int, int) int { return a + b }
+    ...
+    ./main.go:6:10: inlining call to sum func(int, int) int { return a + b }
+    ```
+- Inlining only works for functions with a **certain complexity**, also known as an **inlining budget**. Otherwise, the compiler will inform us that the function is too complex to be inlined:
+    ```sh
+    ./main.go:10:6: cannot inline foo: function too complex:
+    cost 84 exceeds budget
+    ```
+- Inlining has two main benefits 👍:
+  - First, it removes the **overhead** of a **function call** (even though the overhead has been mitigated since Go 1.17 and register-based calling conventions).
+  - Second, it allows the compiler to proceed to **further optimizations**. For example, after inlining a function, the compiler can decide that a variable it was initially supposed to escape on the heap may stay on the stack.
+- The question is, if this optimization is applied automatically by the compiler, why should we care about it as Go developers? The answer lies in the concept of **mid-stack** inlining.
+- Mid-stack inlining is about inlining functions that **call other functions**. Before Go 1.9, only **leaf** functions were considered for inlining. Now, thanks to mid-stack inlining, the following foo function can also be inlined:
+    ```go
+    func main() {
+        foo() // Because the foo function isn’t too complex, the compiler can inline its call.
+    }
+    func foo() {
+        x := 1
+        bar(x)
+    }
+    ```
+- Thanks to mid-stack inlining, as Go developers, we can now optimize an application using the concept of **fast-path** inlining to distinguish between fast and slow paths.
+- This optimization technique is about distinguishing between **fast and slow paths**. If a fast path can be inlined but not a slow one, we can extract the slow path inside a **dedicated function**. Hence, if the inlining budget isn’t exceeded, our function is a candidate for inlining.
+- ➡️ This will allow us to avoid the overhead of calling a function (speed improves **around 5%**).
