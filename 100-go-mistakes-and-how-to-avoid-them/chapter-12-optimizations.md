@@ -127,7 +127,6 @@ are allocated contiguously ) that makes the CPU **fetch fewer cache lines** from
     ```
 - Without data alignment, on a 64-bit architecture, these two variables could be allocated as below:
     <p align="center"><img src="./assets/bad-data-alignment.png" width="200px" height="auto"></p>
-
 - The `j` variable allocation could be spread over two words. If the CPU wanted to read `j`, it would require **two memory accesses** instead of one.
 - To prevent such a case, a variable’s memory address should be a **multiple** of its own **size**. This is the concept of **data alignment**. In Go, the alignment is guaranteed for common variable types such as: `byte`, `float64`, `complex128`, ..
 - During the compilation, the Go compiler adds **padding** to guarantee data alignment:
@@ -156,3 +155,57 @@ are allocated contiguously ) that makes the CPU **fetch fewer cache lines** from
     <p align="center"><img src="./assets/padding-and-spacial-locality.png" width="500px" height="auto"></p>
   - Because each cache line contains more `i` variables, iterating over a slice of `Foo` requires fewer cache lines total.
   - ➡️  Each cache line is more useful because it contains on average **33%** more `i` variables. Therefore, iterating over a `Foo` slice to sum all the int64 elements is more efficient 👍.
+
+## #95: Not understanding stack vs. heap
+
+- When a goroutine starts, it gets **2 KB** of contiguous memory as its stack space (this size has evolved over time and could change again). However, this size **isn’t fixed** at run time and can grow and shrink as necessary (but it always remains contiguous in memory, preserving data locality).
+- Consider the example below:
+    ```go
+    func main() {
+        a := 3
+        b := 2
+        c := sumPtr(a, b)
+        println(*c)
+    }
+    func sumPtr(x, y int) *int {
+        z := x + y
+        return &z
+    }
+    ```
+- If `c` was referencing the address of the `z` variable, and that `z` was allocated on the stack, we would have a major problem. The address would **no longer be valid,** plus the stack frame of main would keep growing and erase the `z` variable. For that reason, the stack isn’t enough, and we need another type of memory: the **heap**.
+- Because the `z` variable couldn’t live on the stack; therefore, it has been **escaped** to the heap. If the compiler cannot prove that a variable isn’t referenced after the function returns, the variable is allocated on the heap 💁.
+- The stack is **self-cleaning**, and is accessed by a single goroutine. Conversely, the heap must be cleaned by an external system: the **GC**.
+- The more heap allocations are made, the more we **pressure** the GC. When the GC runs, it uses **25%** of the available CPU capacity and may create milliseconds of “*stop the world*” latency (the phase when an application is paused).
+- We must also understand that allocating on the stack is **faster** for the Go runtime because it’s trivial: a pointer references the following available memory address. Conversely, allocating on the heap requires more effort to find the right place and hence takes more time.
+- 
+    > 💡 This example shows that using pointers to avoid a copy **isn’t necessarily faster**; it depends on the context. So far in this book, we have only discussed values versus pointers via the prism of semantics: using a pointer when a value has to be **shared**. In most cases, this should be the rule to follow. Also bear in mind that modern CPUs are extremely efficient at copying data, especially within the same cache line. Let’s avoid premature optimization and focus on readability and semantics first.
+- **Escape analysis** refers to the work performed by the compiler to decide whether a variable should be allocated on the stack or the heap. Let’s look at the main rules.
+  - When an allocation cannot be done on the stack, it is done on the heap. Even though this sounds like a simplistic rule, it’s important to remember 🤷.
+  - For example, if the compiler cannot prove that a variable isn’t **referenced** after a function returns, this variable is allocated on the heap.
+  - In general, **sharing up** escapes to the heap and **sharing down** stays on the stack.
+- The following are other cases in which a variable can be escaped to the heap:
+  - **Global variables**, because multiple goroutines can access them.
+  - A **pointer** sent to a **channel**:
+    ```go
+    type Foo struct{ s string }
+    ch := make(chan *Foo, 1)
+    foo := &Foo{s: "x"}
+    ch <- foo // Here, foo escapes to the heap.
+    ```
+  - A variable referenced by a value sent to a channel:
+    ```go
+    type Foo struct{ s *string }
+    ch := make(chan Foo, 1)
+    s := "x"
+    bar := Foo{s: &s} // Because s is referenced by Foo via its address, it escapes to the heap in these situations
+    ch <- bar
+    ```
+  - If a local **variable** is **too large** to fit on the stack.
+  - If the size of a local variable is **unknown**. For example, `s := make([]int, 10)` may not escape to the heap, but `s := make([]int, n)` will, because its size is based on a variable.
+  -  If the backing array of a slice is reallocated using **append**.
+- Although this list gives us ideas for understanding the compiler’s decisions, it’s **not exhaustive** and may change in future Go versions. To confirm an assumption, we can access the compiler’s decisions using `-gcflags`:
+    ```sh
+    $ go build -gcflags "-m=2"
+    ...
+    ./main.go:12:2: z escapes to heap:
+    ```
