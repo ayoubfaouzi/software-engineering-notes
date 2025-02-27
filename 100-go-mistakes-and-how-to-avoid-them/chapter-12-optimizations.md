@@ -300,3 +300,83 @@ are allocated contiguously ) that makes the CPU **fetch fewer cache lines** from
 - Thanks to mid-stack inlining, as Go developers, we can now optimize an application using the concept of **fast-path** inlining to distinguish between fast and slow paths.
 - This optimization technique is about distinguishing between **fast and slow paths**. If a fast path can be inlined but not a slow one, we can extract the slow path inside a **dedicated function**. Hence, if the inlining budget isn’t exceeded, our function is a candidate for inlining.
 - ➡️ This will allow us to avoid the overhead of calling a function (speed improves **around 5%**).
+
+## #98: Not using Go diagnostics tooling
+
+- **Profiling**  is achieved via **instrumentation** using a tool called a profiler: in Go, **pprof**.
+- There are several ways to enable `pprof`. For example, we can use the `net/http/pprof` package to serve the profiling data via HTTP.
+- 📓 Note that enabling `pprof` is **safe** even in **production** (https://go.dev/doc/diagnostics#profiling). The profiles that impact performance,
+such as CPU profiling, aren’t enabled by default, nor do they run continuously: they are activated only for a specific period.
+
+### CPU PROFILING
+
+- We can access the `/debug/pprof/profile` endpoint to activate CPU profiling.
+- Accessing this endpoint executes CPU profiling for **30 seconds** by default. For 30s, our application is interrupted every **10 ms**.
+- We can also enable the CPU profiler using the `-cpuprofile flag`, such as when running a benchmark: `$ go test -bench=. -cpuprofile profile.out`.
+    - This command produces the same type of file that can be downloaded via `/debug/pprof/profile`.
+- From this file, we can navigate to the results using go tool: `$ go tool pprof -http=:8080 <file>`.
+- Thanks to this kind of data, we can get a general idea of how an application behaves:
+    - Too many calls to `runtime.mallogc` can mean an **excessive** number of **small heap allocations** that we can try to minimize.
+    - Too much time spent in **channel** operations or **mutex locks** can indicate excessive **contention** that is harming the app's performance.
+    - Too much time spent on `syscall.Read` or `syscall.Write` means the application spends a significant amount of time in **Kernel mode. Working on I/O buffering may be an avenue for improvement.
+
+### HEAP PROFILING
+
+- Like CPU profiling, heap profiling is **sample-based**. Located at `/debug/pprof/heap/`.
+- By default, samples are profiled at one allocation for every **512 KB** of heap allocation.
+- Besides looking at the call chain to understand what part of an application is responsible for most of the heap allocations. We can also look at different sample types:
+    - `alloc_objects` — Total number of objects allocated
+    - `alloc_space` — Total amount of memory allocated
+    - `inuse_objects` — Number of objects allocated and not yet released
+    - `inuse_space` — Amount of memory allocated and not yet released
+- Forcing a GC before downloading data is a way to prevent **false assumptions**. For example, if we see a peak of retained objects without running a GC first, we cannot be sure whether it’s a leak or objects that the next GC will collect.
+- Using `pprof`, we can download a heap profile and force a GC in the meantime. The procedure in Go is the following:
+    1 Go to `/debug/pprof/heap?gc=1` (trigger the GC and download the heap profile).
+    2 Wait for a few seconds/minutes.
+    3 Go to `/debug/pprof/heap?gc=1` again.
+    4 Use go tool to compare both heap profiles: `$ go tool pprof -http=:8080 -diff_base <file2> <file1>`.
+- Slow increases are **normal**, the important part is to track **steady increases** in allocations of a specific object 👍.
+
+### GOROUTINES PROFILING & BLOCK PROFILING
+
+- The goroutine profile reports the stack trace of all the current goroutines in an application. We can download a file using `debug/pprof/goroutine/?debug=0` and use `go tool` again.
+- We can see the current state of the application and how many goroutines were created per function.
+- The **block** profile reports where ongoing goroutines block waiting on synchronization primitives. Possibilities include
+    - Sending or receiving on an unbuffered channel
+    - Sending to a full channel
+    - Receiving from an empty channel
+    - Mutex contention
+    - Network or filesystem waits.
+- Block profiling also records the amount of **time** a goroutine has been **waiting** and is accessible via `debug/pprof/block`.
+- The block profile isn’t enabled by default: we have to call `runtime.SetBlockProfileRate` to enable it.
+
+### MUTEX PROFILING
+
+- If we suspect that our application spends significant time waiting for locking mutexes, thus harming execution, we can use mutex profiling. It’s accessible via `/debug/pprof/mutex`.
+- It’s disabled by default: we have to enable it using `runtime.SetMutexProfileFraction`, which controls the fraction of mutex contention events reported.
+- ⚠️ Be sure to enable only **one profiler at a time**: for example, do not enable CPU and heap profiling simultaneously. Doing so can lead to erroneous observations.
+
+## The execution tracer
+
+- The execution tracer is a tool that captures a wide range of runtime events with go tool to make them available for visualization. It is helpful for the following:
+    - Understanding runtime events such as how the GC performs
+    - Understanding how goroutines execute
+    - Identifying poorly parallelized execution
+- We will write a benchmark for the first version (merge sort) and execute it with the `-trace` flag to enable the execution tracer: `go test -bench=. -v -trace=trace.out`. We can also download a remote trace file using the `/debug/pprof/trace?debug=0` pprof endpoint.
+- This command creates a `trace.out` file that we can open using go tool: `$ go tool trace trace.out`.
+- Each bar corresponds to a single goroutine execution. Having too many small bars doesn’t look right: it means execution that is **poorly parallelized** 🤕.
+- Figure below zooms even closer to see how these goroutines are orchestrated. Roughly 50% of the CPU time isn’t spent executing application code. The white spaces represent the time the Go runtime takes to spin up and orchestrate new goroutines:
+<p align="center"><img src="./assets/goroutine-switch.png" width="500px" height="auto"></p>
+- Let’s compare this with the second parallel implementation, which was about an order of magnitude faster:
+<p align="center"><img src="./assets/goroutine-switch-enhanced.png" width="500px" height="auto"></p>
+
+- ➡️ Each goroutine takes more time to execute, and the number of white spaces has been **significantly reduced**. Hence, the CPU is much more occupied executing application code than it was in the first version.
+- What are the main differences compared between profiling and user-level traces?
+  - CPU profiling:
+    – Sample-based.
+    – Per function.
+    – Doesn’t go below the sampling rate (10 ms by default).
+  - User-level traces:
+    – Not sample-based.
+    – Per-goroutine execution (unless we use the `runtime/trace` package).
+    – Time executions aren’t bound by any rate
