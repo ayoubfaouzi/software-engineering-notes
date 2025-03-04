@@ -379,4 +379,19 @@ such as CPU profiling, aren’t enabled by default, nor do they run continuously
   - User-level traces:
     – Not sample-based.
     – Per-goroutine execution (unless we use the `runtime/trace` package).
-    – Time executions aren’t bound by any rate
+    – Time executions aren’t bound by any rate.
+
+## #99: Not understanding how the GC works
+
+- A GC keeps a **tree of object references**.
+- The Go GC is based on the **mark-and-sweep** algorithm, which relies on two stages:
+    - **Mark stage** — Traverses all the **objects** of the heap and marks whether they are still **in use**.
+    - **Sweep stage** — Traverses the tree of **references** from the root and **deallocates** blocks of objects that are no longer referenced.
+- When a GC runs, it first performs a set of actions that lead to stopping the world (two stop-the-worlds per GC, to be precise 🤔). That is, all the available CPU time is used to perform the GC, putting our application code on hold. Following these steps, it starts the world again, resuming our application but also running a **concurrent** phase. For that reason, the Go GC is called **concurrent mark-and-sweep**: it aims to reduce the number of stop-the-world operations per GC cycle and mostly run concurrently alongside our application.
+- Go GC has a way to free memory after consumption **peak** thanks to the **periodic scavenger**. When it detects that a large heap  is no longer necessary, it frees some memory and returns it to the OS.
+- When will a GC cycle run? It relies on a single environment variable: `GOGC`. This variable defines the % of the heap growth since the last GC before triggering another GC; the default value is **100%**.
+- In most cases, keeping the `GOGC` at 100 should be enough. However, if our application may face request **peaks** leading to frequent GC and latency impacts, we can **increase** this value.
+- Finally, in the event of an exceptional request peak, we can consider using the trick of keeping the virtual heap size to a minimum by forcing a **large allocation** of memory to improve the stability of the heap. For example, we can force the allocation of 1 GB using a global variable in `main.go`:
+`var min = make([]byte, 1_000_000_000) // 1 GB`
+  - What’s the point of such an allocation? If **GOGC** is kept at 100, instead of triggering a GC every time the heap doubles, Go will only trigger a GC when the heap reaches 2 GB.
+  - This should **reduce the number of GC cycles** triggered when all the users connect, reducing the impact on average latency.
