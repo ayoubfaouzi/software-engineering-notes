@@ -395,3 +395,19 @@ such as CPU profiling, aren’t enabled by default, nor do they run continuously
 `var min = make([]byte, 1_000_000_000) // 1 GB`
   - What’s the point of such an allocation? If **GOGC** is kept at 100, instead of triggering a GC every time the heap doubles, Go will only trigger a GC when the heap reaches 2 GB.
   - This should **reduce the number of GC cycles** triggered when all the users connect, reducing the impact on average latency.
+
+## #100: Not understanding the impacts of running Go in Docker and Kubernetes
+
+- When we deploy go apps in Kubernetes, we may assume that `GOMAXPROCS` will be based on limits defined on pods such as (`cpu: 4000m`) and hence will have a value of 4.
+- But that won’t be the case; it is set to the number of logical cores on the **host** ‼️ So, what’s the impact?
+- Kubernetes uses **Completely Fair Scheduler** (CFS) as a process scheduler. CFS is also used to enforce CPU limits for Pod resources.
+- When administrating a Kubernetes cluster, an administrator can configure these two parameters:
+    - `cpu.cfs_period_us` (global setting)
+    - `cpu.cfs_quota_us` (setting per Pod)
+- The former defines a **period** and the latter a **quota**.
+- By default, the period is set to `100ms`. Meanwhile, the default quota value is how much CPU time the application can consume in `100 ms`. The limit is set to 4 cores, which means `400 ms` (4 × 100 ms).
+- ➡️ Therefore, CFS will ensure that our application never consumes more than **400 ms** of CPU time for **100 ms**.
+- Assuming our host has 8 cores, `GOMAXPROCS` will be set to **8**. Therefore, in the worst-case scenario, we can have eight threads, each scheduled on a different core. For every `100 ms`, the quota is set to `400 ms`. If the eight threads are busy executing goroutines, after `50 ms`, we reach the quota of 400 ms (8 × 50 ms = 400 ms). What will be the consequence❓ CFS will **throttle** the CPU resource. Hence, no more CPU resources will be allocated until the start of another period. In other words, our application will be on hold for `50 ms`.
+<p align="center"><img src="./assets/k8s-cpu-throttle.png" width="500px" height="auto"></p>
+- For example, a service with an average latency of 50 ms can take up to 150 ms to complete. This is a possible **300% penalty** on the latency 😮‍💨.
+- So, what’s the solution? First, keep an eye on Go issue [33803](https://github.com/golang/go/issues/33803). Perhaps in a future version of Go, `GOMAXPROCS` will be **CFS-aware**. A solution for today is to rely on a library made by `Uber` called [automaxprocs](github.com/uber-go/automaxprocs). We can use this library by adding a blank import to `go.uber.org/automaxprocs` in main.go; it will automatically set `GOMAXPROCS` to match the Linux container CPU quota.
