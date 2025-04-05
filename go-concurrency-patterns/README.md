@@ -15,3 +15,8 @@
 - The generator pattern makes _Joe_ and _Ann_ count in lockstep.
 - We can instead use a fan-in function to let whosoever is ready talk.
 - We stitch the two channel into a **single one**, and the fan-in function forwards the messages to the output channel.
+
+## Daisy Chain
+
+- Goroutines and channels are chained together to pass data along a series of steps.
+- It’s often used to illustrate the power and simplicity of Go’s concurrency model and how cheap is a goroutine compared to a thread!
