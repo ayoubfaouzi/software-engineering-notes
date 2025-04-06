@@ -10,7 +10,7 @@
 - Channels as a handle on a service.
   > Our boring function returns a channel that lets us communicate with the boring service it provides.
 
-## Multiplexing
+## Fan-In (Multiplexing)
 
 - The generator pattern makes _Joe_ and _Ann_ count in lockstep.
 - We can instead use a fan-in function to let whosoever is ready talk.
