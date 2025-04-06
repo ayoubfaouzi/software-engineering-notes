@@ -15,6 +15,19 @@
 - The generator pattern makes _Joe_ and _Ann_ count in lockstep.
 - We can instead use a fan-in function to let whosoever is ready talk.
 - We stitch the two channel into a **single one**, and the fan-in function forwards the messages to the output channel.
+- Fan In is used when a **single function** reads from **multiple inputs** and proceeds until all are closed. This is made possible by multiplexing the input into a single channel.
+
+## Fan-Out
+
+- Fan out is used when multiple functions read from the **same channel**.
+- The reading will stop only when the channel is closed.
+- This characteristic is often used to distribute work amongst a group of workers to parallelize the CPU and I/O.
+
+What: Distribute work across multiple goroutines to run in parallel.
+
+Why: Improve throughput by utilizing multiple CPU cores.
+
+Example: Multiple workers pulling tasks from the same job queue.
 
 ## Daisy Chain
 
