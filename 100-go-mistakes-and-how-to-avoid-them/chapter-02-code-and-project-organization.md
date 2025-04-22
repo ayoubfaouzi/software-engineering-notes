@@ -77,23 +77,23 @@ if tracing {
     }
     ```
 -  Let’s describe three main downsides of the code above:
-   - It shouldn’t necessarily be **up to the package** itself to decide whether to stop the application. Perhaps a caller might have preferred implementing a retry or using a fallback mechanism. In this case, opening the database within an `init` function prevents client packages from implementing their error-handling logic.
+   - It shouldn’t necessarily be **up to the package** itself to decide whether to **stop** the application. Perhaps a caller might have preferred implementing a retry or using a fallback mechanism. In this case, opening the database within an `init` function prevents client packages from implementing their error-handling logic.
    - If we add tests to this file, the `init` function will be executed before running the test cases, which isn’t necessarily what we want (for example, if we add unit tests on a utility function that doesn’t require this connection to be created). Therefore, the `init` function in this example **complicates writing unit tests**.
    - The last downside is that the example requires assigning the database connection pool to a **global variable**. Global variables have some severe drawbacks; for example:
-    - Any functions can alter global variables within the package.
-    - Unit tests can be more complicated because a function that depends on a global variable won’t be **isolated anymore**.
+       - Any functions can alter global variables within the package.
+       - Unit tests can be more complicated because a function that depends on a global variable won’t be **isolated anymore**.
 - We should be cautious with `init` functions. They can be helpful in some situations, however, such as defining static configuration. Otherwise, and in most cases, we should handle initializations through ad-hoc functions.
 
 ## #4: Overusing getters and setters
 
 - Using **getters** and **setters** presents some advantages, including these:
-    - They **encapsulate** a behavior associated with getting or setting a field, allowing new functionality to be added later (for example, validating a field, returning a computed value, or wrapping the access to a field around a mutex).
+    - They **encapsulate** a **behavior** associated with getting or setting a field, allowing new functionality to be added later (for example, validating a field, returning a computed value, or wrapping the access to a field around a mutex).
     - They **hide** the **internal representation**, giving us more flexibility in what we expose.
     - They provide a **debugging** interception point for when the property changes at run time, making debugging easier.
 - If we fall into these cases or foresee a possible use case while guaranteeing **forward compatibility**, using getters and setters can bring some value. For example, if we use them with a field called `balance`, we should follow these naming conventions:
     - The getter method should be named `Balance` (not `GetBalance`).
     - The setter method should be named `SetBalance`.
-- We shouldn’t **overwhelm** our code with getters and setters on structs if they don’t bring any value. We should be pragmatic and strive to find the right balance between efficiency and following idioms that are sometimes considered indisputable in other programming paradigms.
+- We shouldn’t **overwhelm** our code with getters and setters on structs if they don’t bring any value. We should be pragmatic and strive to find the right **balance** between efficiency and following idioms that are sometimes considered indisputable in other programming paradigms.
 
 ## #5: Interface pollution
 
@@ -103,12 +103,12 @@ if tracing {
   - 🌟 *The bigger the interface, the weaker the abstraction*.
   - Examples: `io.Reader`.
 - When to use interfaces ?
-  - When multiple types implement a **common** behavior. For example, This `Interface` has a strong potential for reusability because it encompasses the common behavior to **sort** any collection that is index-based:
+  - When multiple types implement a **common behavior**. For example, This `Interface` has a strong potential for reusability because it encompasses the common behavior to **sort** any collection that is index-based:
   ```go
-  type Interface interface {
-    Len() int
-    Less(i, j int) bool
-    Swap(i, j int)
+    type Interface interface {
+        Len() int
+        Less(i, j int) bool
+        oSwap(i, j int)
     }
   ```
   - **Decoupling** our code from an implementation:

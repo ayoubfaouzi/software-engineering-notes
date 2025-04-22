@@ -5,45 +5,36 @@ import (
 	"sync"
 )
 
-func generator(nums ...int) <-chan int {
-	c := make(chan int)
-
-	go func() {
-		for _, val := range nums {
-			c <- val
-		}
-
-		close(c)
-	}()
-
-	return c
+func worker(id int, jobs <-chan int, results chan<- int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for job := range jobs {
+		results <- job * 2
+	}
 }
 
 func main() {
-
-	data1 := []int{1, 2, 3, 4, 5}
-	data2 := []int{10, 20, 30, 40, 50}
+	jobs := make(chan int, 5)
+	results := make(chan int, 5)
 
 	var wg sync.WaitGroup
-	ch1 := generator(data1...)
-	ch2 := generator(data2...)
-	wg.Add(2)
 
-	go func() {
-		for val := range ch1 {
-			fmt.Printf("Channel1 data: %v\n", val)
-		}
+	// Fan-out: 3 workers
+	for w := 1; w <= 3; w++ {
+		wg.Add(1)
+		go worker(w, jobs, results, &wg)
+	}
 
-		wg.Done()
-	}()
-	go func() {
-		for val := range ch2 {
-			fmt.Printf("Channel2 data: %v\n", val)
-		}
-
-		wg.Done()
-	}()
+	// Send jobs
+	for i := 1; i <= 5; i++ {
+		jobs <- i
+	}
+	close(jobs)
 
 	wg.Wait()
+	close(results)
 
+	// Fan-in: collect results
+	for res := range results {
+		fmt.Println("Result:", res)
+	}
 }

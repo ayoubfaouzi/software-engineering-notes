@@ -26,7 +26,7 @@ func fakeSearch(kind string) Search {
 }
 
 // How do we avoid discarding result from the slow server?
-// We duplicates too many instances, and perfor parallel requests.
+// We duplicate to many instances, and perform parallel requests.
 func First(query string, replicas ...Search) Result {
 
 	c := make(chan Result)
