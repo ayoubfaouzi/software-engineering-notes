@@ -108,7 +108,7 @@ if tracing {
     type Interface interface {
         Len() int
         Less(i, j int) bool
-        oSwap(i, j int)
+        Swap(i, j int)
     }
   ```
   - **Decoupling** our code from an implementation:
