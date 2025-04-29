@@ -6,24 +6,24 @@ Selection Sort is a comparison-based sorting algorithm. It sorts an array by rep
 
 Here’s a JavaScript implementation of Selection Sort:
 
-    ```js
-    function selectionSort(array) {
-        for(let i = 0; i < array.length - 1; i++) {
-            let lowestNumberIndex = i;
-            for(let j = i + 1; j < array.length; j++) {
-                if(array[j] < array[lowestNumberIndex]) {
-                    lowestNumberIndex = j;
-                }
-            }
-            if(lowestNumberIndex != i) {
-                let temp = array[i];
-                array[i] = array[lowestNumberIndex];
-                array[lowestNumberIndex] = temp;
+```js
+function selectionSort(array) {
+    for(let i = 0; i < array.length - 1; i++) {
+        let lowestNumberIndex = i;
+        for(let j = i + 1; j < array.length; j++) {
+            if(array[j] < array[lowestNumberIndex]) {
+                lowestNumberIndex = j;
             }
         }
-    return array;
+        if(lowestNumberIndex != i) {
+            let temp = array[i];
+            array[i] = array[lowestNumberIndex];
+            array[lowestNumberIndex] = temp;
+        }
     }
-    ```
+return array;
+}
+```
 
 ## The Efficiency of Selection Sort
 
@@ -67,7 +67,7 @@ Let’s apply this here. If we count all the steps, we have **N comparisons**, *
 
 O(N).
 
->. 2. Use Big O Notation to describe the time complexity of an algorithm that takes 2N2.
+> 2. Use Big O Notation to describe the time complexity of an algorithm that takes 2N2.
 
 o(N^2)
 
@@ -88,7 +88,6 @@ end
 ```
 
 O(N).
-
 
 > 4. Use Big O Notation to describe the time complexity of the following function, which accepts an array of strings and prints each string in multiple cases:
 
