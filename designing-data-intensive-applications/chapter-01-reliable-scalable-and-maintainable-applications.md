@@ -63,42 +63,44 @@
 ### Describing load
 
 - Load can be described with a few numbers which we call **load parameters**. Examples:
-  - it’s requests per second;
-  - ratio of reads to write;
-  - the number of simultaneously active users;
-  - number of messages in the queue ...
+  - It’s requests per second;
+  - Ratio of reads to write;
+  - The number of simultaneously active users;
+  - Number of messages in the queue ...
 
 ### Describing performance
 
 - In a batch-processing system such as _Hadoop_, we usually care about **throughput**: the number of records we can process per second, or the total time it takes to run a job on a dataset of a certain size.
-- In online systems, **latency** is usually more important—the time it takes to serve a request, also known as _response time_.
+-  In online systems, what’s usually more important is the service’s **response time** — that is, the time between a client sending a request and
+receiving a response.
 - In practice, in a system handling a variety of requests, the latency per request can **vary a lot**. We therefore need to think of latency not as a **single number**, but as a **probability distribution**.
 - Even in a scenario where you’d think all requests should take the same time, you get variation: random additional latency could be introduced by:
-  - a context switch to a background process;
-  - the loss of a network packet and TCP retransmission;
-  - a garbage collection pause, a page fault forcing a read from disk, or many other things.
+  - A **context switch** to a background process;
+  - The **loss of a network packet** and TCP retransmission;
+  - A **GC** pause, a **page fault** forcing a read from disk, or many other things.
 - It’s common to see the **average** response time of a service reported (arithmetic mean).
 - However, the mean is not a very good metric if you want to know your “typical” response time, because it is easily **biased by outliers**.
 - Usually it is better to use **percentiles**. If you take your list of response times and sort it, from fastest to slowest, then the median is the half-way point: for example, if your median response time is 200 ms, that means half your requests return in less than 200 ms, and half your requests take longer than that.
 - This makes the median a **good metric** if you want to know how long users typically have to wait. The median is also known as **50th percentile**, and sometimes abbreviated as **p50**.
     <p align="center"><img src="assets/response-time.png"></p>
+- High percentiles of response times, also known as **tail latencies**, are important because they directly affect users’ experience of the service 🤷‍♀️.
 
 ### Approaches for coping with load
 
 - good architectures usually involve a pragmatic mixture of approaches (vertical scaling and horizontal scaling).
 - there is no such a thing as **magic scaling sauce**. The problem may be:
-  - the volume of reads, the volume of writes, the volume of data to store;
-  - the complexity of the data, the latency requirements, the access patterns;
-  - or (usually) some mixture of all of these plus many more issues.
+  - The volume of reads, the volume of writes, the volume of data to store;
+  - The complexity of the data, the latency requirements, the access patterns;
+  - Or (usually) some mixture of all of these plus many more issues.
 - In an **early-stage startup** or an unproven product it’s usually more important to be able to **iterate quickly** on product features, than it is to scale to some **hypothetical future load**.
 
 ## Maintainability
 
 - It is well-known that the majority of the cost of software is not in its initial development, but in its ongoing maintenance.
 - We will pay particular attention to three design principles for software systems:
-  - **Operability**: Make it easy for operations teams to keep the system running smoothly
-  - **Simplicity**: Make it easy for new engineers to understand the system, by removing as much complexity as possible from the system.
-  - **Plasticity**: Make it easy for engineers in future to make changes to the system, adapting it for unanticipated use cases as requirements change. Also known as extensibility, modifiability or malleability.
+  - **Operability**: Make it **easy** for operations teams to keep the system **running smoothly**.
+  - **Simplicity**: Make it **easy** for new engineers to **understand the system**, by removing as much complexity as possible from the system.
+  - **Plasticity**: Make it **easy** for engineers in future to **make changes** to the system, adapting it for unanticipated use cases as requirements change. Also known as extensibility, modifiability or malleability.
 
 ### Operability: making life easy for operations
 

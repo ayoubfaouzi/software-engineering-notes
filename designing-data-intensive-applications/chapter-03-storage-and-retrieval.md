@@ -91,8 +91,18 @@ complex than a KV index but is based on a similar idea:
   - LSM-trees are typically able to sustain **higher write throughput** than Btrees, partly because they sometimes have **lower write amplification** (although this depends on the storage engine configuration and workload), and partly because they **sequentially** write compact SSTable files rather than having to overwrite several pages in the tree. This difference is particularly important on magnetic hard drives, where sequential writes are much faster than random writes.
   - LSM-trees can be **compressed** better, and thus often produce smaller files on disk than B-trees.
 
+## Other Indexing Structures
 
-## Multi-column indexes
+- It is also very common to have **secondary** indexes:
+  - They are often crucial for performing **joins** efficiently.
+
+### Storing values within the index
+
+- The **heap file** approach is common because it avoids **duplicating** data when multiple secondary indexes are present: each index just references a location in the heap file, and the actual data is kept in one place -> Updating vlaues are efficient but can be challenging sometimes (see Dababase Internals Chap 1).
+- In some situations, the extra hop from the index to the heap file is too much of a per‐ formance penalty for reads, so it can be desirable to store the indexed row directly within an index. This is known as a clustered index.
+- A compromise between a clustered index (storing all row data within the index) and a nonclustered index (storing only references to the data within the index) is known as a covering index or index with included columns, which stores some of a table’s columns within the index [33]. This allows some queries to be answered by using the index alone.
+
+### Multi-column indexes
 
 - The most common type of multi-column index is called a **concatenated index**, which simply combines several fields into one key by appending one column to another (the index definition specifies in which order the fields are concatenated).
 - Multi-dimensional indexes are a more general way of querying several columns at once, which is particularly important for **geospatial** data:
@@ -104,3 +114,54 @@ WHERE latitude > 51.4946 AND latitude < 51.5079 AND longitude > -0.1162 AND long
 
 - A standard B-tree or LSM-tree index is not able to answer that kind of query efficiently: it can give you either all the restaurants in a range of latitudes (but at any longitude), or all the restaurants in a range of longitudes (but anywhere between north and south pole), but not both simultaneously.
 - One option is to translate a two-dimensional location into a single number using a space-filling curve, and then to use a regular B-tree index. More commonly, specialized spatial indexes such as R-trees are used. For example, PostGIS implements geospatial indexes as R-trees using PostgreSQL’s Generalized Search Tree indexing facility.
+
+### Full-text search and fuzzy indexes
+
+- FTS engines commonly allow a search for:
+    - One word to be expanded to include synonyms of the word,
+    - to ignore grammatical variations of words,
+    - and to search for occurrences of words near each other in the same document,
+    - and support various other features that depend on linguistic analysis of the text. 
+- To cope with typos in documents or queries, Lucene is able to search text for words within a certain edit distance (an edit distance of 1 means that one letter has been added, removed, or replaced).
+    - Lucene uses a SSTable-like structure for its term dictionary. 
+- Other fuzzy search techniques go in the direction of document classification and machine learning. 
+
+### Keeping everything in memory
+
+- As RAM becomes cheaper, the cost-per-gigabyte argument is eroded =>  This has led to the development of in-memory databases.
+- Some in-memory key-value stores, such as Memcached, are intended for caching use only, where it’s acceptable for data to be lost if a machine is restarted. But other in-memory databases aim for durability, which can be achieved with special hardware (such as battery-powered RAM), by writing a log of changes to disk, by writing periodic snapshots to disk, or by replicating the in-memory state to other machines.
+- Counterintuitively, the performance advantage of in-memory databases is not due to the fact that they don’t need to read from disk. Even a disk-based storage engine may never need to read from disk if you have enough memory, because the operating sys‐ tem caches recently used disk blocks in memory anyway. Rather, they can be faster because they can avoid the overheads of encoding in-memory data structures in a form that can be written to disk. 
+
+## Transaction Processing or Analytics?
+
+Even though databases started being used for many different kinds of data comments on blog posts, actions in a game, contacts in an address book, etc.—the basic access pattern remained similar to processing business transactions. An application typically looks up a small number of records by some key, using an index. Records are inserted or updated based on the user’s input. Because these applications are interactive, the access pattern became known as online transaction processing (OLTP).
+
+However, databases also started being increasingly used for data analytics, which has very different access patterns. Usually an analytic query needs to scan over a huge number of records, only reading a few columns per record, and calculates aggregate statistics (such as count, sum, or average) rather than returning the raw data to the user. For example, if your data is a table of sales transactions, then analytic queries might be:
+    - What was the total revenue of each of our stores in January?
+    - How many more bananas than usual did we sell during our latest promotion?
+    - Which brand of baby food is most often purchased together with brand X diapers?
+<p align="center"><img src="assets/olap-vs-oltp.png" width="400px" height="auto"></p>
+
+At first, the same databases were used for both transaction processing and analytic queries. SQL turned out to be quite flexible in this regard: it works well for OLTP-type queries as well as OLAP-type queries. Nevertheless, in the late 1980s and early 1990s, there was a trend for companies to stop using their OLTP systems for analytics purposes, and to run the analytics on a separate database instead. This separate database was called a *data warehouse*.
+
+## Data Warehousing
+
+Database administrators therefore closely **guard** their OLTP databases. They are usually reluctant to let business analysts run **ad hoc** analytic queries on an OLTP database, since those queries are often expensive, scanning large parts of the dataset, which can harm the performance of concurrently executing transactions.
+
+A data warehouse, by contrast, is a separate db that analysts can query to their hearts’ content, without affecting OLTP operations.  
+    - Contains a read-only copy of the data in all the various OLTP systems in the company.
+    - Data is extracted from OLTP databases (using either a periodic data dump or a continuous stream of updates), transformed into an analysis-friendly schema, cleaned up, and then loaded into the data warehouse. 
+:arrow_forward: This process of getting data into the warehouse is known as Extract–Transform–Load (ETL).
+<p align="center"><img src="assets/datawarehouse-etl.png" width="400px" height="auto"></p>
+
+:+1: A big advantage of using a separate data warehouse, rather than querying OLTP systems directly for analytics, is that the data warehouse can be optimized for analytic access patterns. I
+
+### The divergence between OLTP databases and data warehouses
+
+On the surface, a data warehouse and a relational OLTP database look similar, because they both have a SQL query interface. However, the internals of the systems can look quite different, because they are optimized for very different query patterns. Many database vendors now focus on supporting either transaction processing or analytics workloads, but not both.
+
+## Stars and Snowflakes: Schemas for Analytics
+
+- Many data warehouses are used in a fairly formulaic style, known as a star schema (also known as dimensional modeling).
+- The example schema in Figure 3-9 shows a data warehouse that might be found at a grocery retailer. At the center of the schema is a so-called fact table (in this example, it is called fact_sales). Each row of the fact table represents an event that occurred at a particular time (here, each row represents a customer’s purchase of a product). If we were analyzing website traffic rather than retail sales, each row might represent a page view or a click by a user.
+<p align="center"><img src="assets/fact-table.png" width="400px" height="auto"></p>

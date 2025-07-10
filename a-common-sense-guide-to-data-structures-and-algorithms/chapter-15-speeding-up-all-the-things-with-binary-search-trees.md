@@ -47,10 +47,8 @@
 
 1. Designate a node to be the “**current node**” (At the beginning of the algorithm, the **root** node is the first “current node”).
 2. Inspect the value at the current node. If we’ve found the value we’re looking for, great!
-3. If the value we’re looking for is **less** than the current node, search for it
-in its **left** subtree.
-4. If the value we’re looking for is **greater** than the current node, search for
-it in its **right** subtree.
+3. If the value we’re looking for is **less** than the current node, search for it in its **left** subtree.
+4. If the value we’re looking for is **greater** than the current node, search for it in its **right** subtree.
 5. Repeat Steps 1 through 4 until we find the value we’re searching for, or until we hit the **bottom** of the tree, in which case our value must not be in the tree.
 
 ## The Efficiency of Searching a Binary Search Tree
@@ -63,21 +61,74 @@ it in its **right** subtree.
 number of nodes that the tree has (Really, we’re doubling the nodes and adding one 🤓).
 - In this regard, then, searching a binary search tree has the **same efficiency** as **binary search** within an **ordered array**. Where binary search trees really shine over ordered arrays, though, is with **insertion**.
 
-## Code Implementation: Searching a Binary Search Tree
-
 Here’s how we can use recursion to implement search with Python:
+  ```py
+  def search(searchValue, node):
+    # Base case: If the node is nonexistent
+    # or we've found the value we're looking for:
+    if node is None or node.value == searchValue:
+      return node
+    # If the value is less than the current node, perform
+    # search on the left child:
+    elif searchValue < node.value:
+      return search(searchValue, node.leftChild)
+    # If the value is greater than the current node, perform
+    # search on the right child:
+    else: # searchValue > node.value
+      return search(searchValue, node.rightChild)
+  ```
+
+## Insertion
+
+- Insertion always takes just one extra step beyond a search, which means insertion takes `(log N) + 1` steps ➡️ this is `O(log N)`.
+- This is what makes binary search trees so efficient. While ordered arrays have O`(log N)` **search** and `O(N)` **insertion**, BSTs have `O(log N)` **search** and `O(log N)` **insertion**. This becomes critical in an application in which you anticipate a **lot of changes** to your data.
+
+Here’s a Python implementation of inserting a new value into a binary search tree. Like the search function, it is recursive:
 ```py
-def search(searchValue, node):
-  # Base case: If the node is nonexistent
-  # or we've found the value we're looking for:
-  if node is None or node.value == searchValue:
-    return node
-  # If the value is less than the current node, perform
-  # search on the left child:
-  elif searchValue < node.value:
-    return search(searchValue, node.leftChild)
-  # If the value is greater than the current node, perform
-  # search on the right child:
-  else: # searchValue > node.value
-    return search(searchValue, node.rightChild)
+def insert(value, node):
+  if value < node.value:
+  # If the left child does not exist, we want to insert
+  # the value as the left child:
+    if node.leftChild is None:
+      node.leftChild = TreeNode(value)
+    else:
+      insert(value, node.leftChild)
+  elif value > node.value:
+    # If the right child does not exist, we want to insert
+    # the value as the right child:
+    if node.rightChild is None:
+      node.rightChild = TreeNode(value)
+    else:
+      insert(value, node.rightChild)
 ```
+
+### The Order of Insertion
+
+- It is important to note that only when creating a tree out of **randomly sorted** data do trees usually wind up being **well-balanced**. However, if we insert **sorted** data into a tree, it can become **imbalanced** and **less efficient**.
+- For example, if we were to insert the following data in this order — `1, 2, 3, 4, 5` — we’d end up with a tree that looks like this:
+  ```c
+         1
+          \
+           2
+            \
+             3
+              \
+               4
+                \
+                 5
+  ```
+- This tree is completely **linear**, so searching for the `5` within this tree would
+take` O(N)` ⚠️.
+- However, if we inserted the same data in the following order — `3, 2, 4, 1, 5` — the tree would be **evenly balanced**:
+  ```c
+         3
+        / \
+       2   4
+      /     \
+     1       5
+  ```
+
+- Only with a **balanced tree** does search take `O(log N)`.
+
+## Deletion
+

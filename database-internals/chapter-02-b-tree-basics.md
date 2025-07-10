@@ -29,32 +29,29 @@
 
 ## Disk-Based Structures
 
-On-disk data structures are often used when the amounts of data are so large that keeping an entire dataset in memory is impossible or not feasible. Only a fraction of the data can be cached in memory at any time, and the rest has to be stored on disk in a manner that allows efficiently accessing it.
+On-disk data structures are often used when the amounts of data are **so large** that keeping an entire dataset in **memory is impossible** or not feasible. Only a fraction of the data can be cached in memory at any time, and the rest has to be stored on disk in a manner that allows efficiently accessing it.
 
 ### Hard Disk Drives
 
-On spinning disks, seeks increase costs of random reads because they require disk rotation and mechanical head movements to position the read/write head to the desired location. However, once the expensive part is done, reading or writing contiguous bytes (i.e., sequential operations) is relatively cheap.
+On **spinning** disks, seeks increase costs of **random reads** because they require disk **rotation** and **mechanical head movements** to position the read/write head to the desired location. However, once the expensive part is done, reading or writing contiguous bytes (i.e., sequential operations) is relatively cheap.
 
-Head positioning is the most expensive part of an operation on the HDD. This is one of the reasons we often hear about the positive effects of sequential I/O: reading and writing contiguous memory segments from disk.
+Head positioning is the most **expensive** part of an operation on the HDD. This is one of the reasons we often hear about the positive effects of **sequential I/O**: reading and writing **contiguous** memory segments from disk.
 
 ### Solid State Drives
 
-Since in both device types (HDDs and SSDs) we are addressing chunks of memory rather than individual bytes (i.e., accessing data block-wise), most operating systems have a block device abstraction. It hides an internal disk structure and buffers I/O operations internally, so when we’re reading a single word from a block device, the whole block containing it is read. This is a constraint we cannot ignore and should always take into account when working with disk-resident data structures.
+Since in both device types (HDDs and SSDs) we are addressing **chunks of memory** rather than individual bytes (i.e., accessing data block-wise), most operating systems have a **block device** abstraction. It hides an internal disk structure and buffers I/O operations internally, so when we’re reading a **single word** from a block device, the **whole block** containing it is read 🤦. This is a constraint we cannot ignore and should always take into account when working with disk-resident data structures.
 
-In SSDs, we don’t have a strong emphasis on random versus sequential I/O, as in HDDs, because the difference in latencies between random and sequential reads is not as large. There is still some difference caused by prefetching, reading contiguous
-pages, and internal parallelism.
+In SSDs, we don’t have a strong emphasis on random versus sequential I/O, as in HDDs, because the difference in latencies between **random** and **sequential** reads is **not as large**. There is still some difference caused by **prefetching**, reading contiguous pages, and **internal parallelism**.
 
-Even though garbage collection is usually a background operation, its effects may negatively impact write performance, especially in cases of random and unaligned write workloads. Writing only full blocks, and combining subsequent writes to the same block, can help to reduce the number of required I/O operations.
+Even though GC is usually a background operation, its effects may **negatively** impact **write performance**, especially in cases of random and unaligned write workloads. Writing only full blocks, and combining subsequent writes to the same block, can help to reduce the number of required I/O ops.
 
 ### On-Disk Structures
 
-Besides the cost of disk access itself, the main limitation and design condition for building efficient on-disk structures is the fact that the smallest unit of disk operation is a block. To follow a pointer to the specific location within the block, we have to fetch an entire block. Since we already have to do that, we can change the layout of the data structure to take advantage of it.
+Besides the cost of disk access itself, the main limitation and design condition for building efficient on-disk structures is the fact that the **smallest unit** of disk operation is a **block**. To follow a pointer to the specific location within the block, we have to **fetch an entire block**. Since we already have to do that, we can change the layout of the data structure to take advantage of it 😼.
 
-In summary, on-disk structures are designed with their target storage specifics in mind and generally optimize for fewer disk accesses. We can do this by improving locality, optimizing the internal representation of the structure, and reducing the
-number of out-of-page pointers.
+In summary, on-disk structures are designed with their target storage specifics in mind and generally optimize for **fewer disk accesses**. We can do this by improving **locality**, optimizing the internal representation of the **structure**, and reducing the number of **out-of-page** pointers.
 
-We came before to the conclusion that high fanout and low height are desired properties for an optimal on-disk data structure. We’ve also just discussed additional space overhead coming from pointers, and maintenance over‐
-head from remapping these pointers as a result of balancing. B-Trees combine these ideas: increase node fanout, and reduce tree height, the number of node pointers, and the frequency of balancing operations.
+We came before to the conclusion that high fanout and low height are desired properties for an optimal on-disk data structure. We’ve also just discussed additional space overhead coming from pointers, and maintenance overhead from remapping these pointers as a result of balancing. B-Trees combine these ideas 💡: increase node fanout, and reduce tree height, the number of node pointers, and the frequency of balancing operations.
 
 ## Ubiquitous B-Trees
 
