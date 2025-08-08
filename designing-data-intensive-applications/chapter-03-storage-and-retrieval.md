@@ -121,16 +121,16 @@ WHERE latitude > 51.4946 AND latitude < 51.5079 AND longitude > -0.1162 AND long
     - One word to be expanded to include synonyms of the word,
     - to ignore grammatical variations of words,
     - and to search for occurrences of words near each other in the same document,
-    - and support various other features that depend on linguistic analysis of the text. 
+    - and support various other features that depend on linguistic analysis of the text.
 - To cope with typos in documents or queries, Lucene is able to search text for words within a certain edit distance (an edit distance of 1 means that one letter has been added, removed, or replaced).
-    - Lucene uses a SSTable-like structure for its term dictionary. 
-- Other fuzzy search techniques go in the direction of document classification and machine learning. 
+    - Lucene uses a SSTable-like structure for its term dictionary.
+- Other fuzzy search techniques go in the direction of document classification and machine learning.
 
 ### Keeping everything in memory
 
 - As RAM becomes cheaper, the cost-per-gigabyte argument is eroded =>  This has led to the development of in-memory databases.
 - Some in-memory key-value stores, such as Memcached, are intended for caching use only, where it’s acceptable for data to be lost if a machine is restarted. But other in-memory databases aim for durability, which can be achieved with special hardware (such as battery-powered RAM), by writing a log of changes to disk, by writing periodic snapshots to disk, or by replicating the in-memory state to other machines.
-- Counterintuitively, the performance advantage of in-memory databases is not due to the fact that they don’t need to read from disk. Even a disk-based storage engine may never need to read from disk if you have enough memory, because the operating sys‐ tem caches recently used disk blocks in memory anyway. Rather, they can be faster because they can avoid the overheads of encoding in-memory data structures in a form that can be written to disk. 
+- Counterintuitively, the performance advantage of in-memory databases is not due to the fact that they don’t need to read from disk. Even a disk-based storage engine may never need to read from disk if you have enough memory, because the operating sys‐ tem caches recently used disk blocks in memory anyway. Rather, they can be faster because they can avoid the overheads of encoding in-memory data structures in a form that can be written to disk.
 
 ## Transaction Processing or Analytics?
 
@@ -148,9 +148,9 @@ At first, the same databases were used for both transaction processing and analy
 
 Database administrators therefore closely **guard** their OLTP databases. They are usually reluctant to let business analysts run **ad hoc** analytic queries on an OLTP database, since those queries are often expensive, scanning large parts of the dataset, which can harm the performance of concurrently executing transactions.
 
-A data warehouse, by contrast, is a separate db that analysts can query to their hearts’ content, without affecting OLTP operations.  
+A data warehouse, by contrast, is a separate db that analysts can query to their hearts’ content, without affecting OLTP operations.
     - Contains a read-only copy of the data in all the various OLTP systems in the company.
-    - Data is extracted from OLTP databases (using either a periodic data dump or a continuous stream of updates), transformed into an analysis-friendly schema, cleaned up, and then loaded into the data warehouse. 
+    - Data is extracted from OLTP databases (using either a periodic data dump or a continuous stream of updates), transformed into an analysis-friendly schema, cleaned up, and then loaded into the data warehouse.
 :arrow_forward: This process of getting data into the warehouse is known as Extract–Transform–Load (ETL).
 <p align="center"><img src="assets/datawarehouse-etl.png" width="400px" height="auto"></p>
 
@@ -160,8 +160,55 @@ A data warehouse, by contrast, is a separate db that analysts can query to their
 
 On the surface, a data warehouse and a relational OLTP database look similar, because they both have a SQL query interface. However, the internals of the systems can look quite different, because they are optimized for very different query patterns. Many database vendors now focus on supporting either transaction processing or analytics workloads, but not both.
 
-## Stars and Snowflakes: Schemas for Analytics
+### Stars and Snowflakes: Schemas for Analytics
 
-- Many data warehouses are used in a fairly formulaic style, known as a star schema (also known as dimensional modeling).
-- The example schema in Figure 3-9 shows a data warehouse that might be found at a grocery retailer. At the center of the schema is a so-called fact table (in this example, it is called fact_sales). Each row of the fact table represents an event that occurred at a particular time (here, each row represents a customer’s purchase of a product). If we were analyzing website traffic rather than retail sales, each row might represent a page view or a click by a user.
+- Many data warehouses are used in a fairly formulaic style, known as a **star schema** (also known as dimensional modeling).
+- The example schema in figure below shows a data warehouse that might be found at a grocery retailer:
+  - At the center of the schema is a so-called **fact table** (in this example, it is called fact_sales).
+  - Each row of the fact table represents an event that occurred at a particular time (here, each row represents a customer’s purchase of a product). If we were analyzing website traffic rather than retail sales, each row might represent a page view or a click by a user.
+  - Other columns in the fact table are **FK references** to other tables, called **dimension tables**. As each row in the fact table represents an event, the dimensions represent the *who*, *what*, *where*, *when*, *how*, and *why* of the event.
 <p align="center"><img src="assets/fact-table.png" width="400px" height="auto"></p>
+
+- A variation of this template is known as the **snowflake schema**, where dimensions are further broken down into subdimensions. For example, there could be separate tables for *brands* and *product* categories, and each row in the `dim_product` table could reference the brand and category as FKs, rather than storing them as strings in the `dim_product` table.
+- Snowflake schemas are **more normalized** than star schemas, but star schemas are often preferred because they are **simpler** for analysts to work with 🤷‍♀️.
+
+## Column-Oriented Storage
+
+- In most OLTP databases, storage is laid out in a **row-oriented** fashion: all the values from one row of a table are stored **next to each other**. Document databases are similar: an entire document is typically stored as **one contiguous** sequence of bytes.
+- Even if you need to select only a couple of dields, a row-oriented storage engine still needs to load all of those rows (each consisting of over 100 attributes) from disk into memory, parse them, and filter out those that don’t meet the required conditions. That can take a long time 🤷.
+- The idea behind column-oriented storage is simple: don’t store all the values from o**ne row together**, but store all the values from **each column together** instead 😼.
+
+### Column Compression
+
+- Column-oriented storage often lends itself very well to **compression**. Take a look at the sequences of values for each column in figure below: they often look quite repetitive, which is a good sign for compression.
+<p align="center"><img src="assets/fact-table.png" width="400px" height="auto"></p>
+
+> 💡 Column-oriented storage and column families *Cassandra* and *HBase* have a concept of column families, which they inherited from *Bigtable*. However, it is very **misleading** to call them **column-oriented**: within each **column family**, they store all columns from a row together, along with a row key, and they do not use column compression. Thus, the *Bigtable* model is still mostly row-oriented.
+
+### Sort Order in Column Storage
+
+- Another advantage (beside query perf) of sorted order is that it can help with compression of columns.
+-  If the primary sort column does not have many distinct values, then after sorting, it will have long sequences where the same value is repeated many times in a row 🙃. A simple **run-length encoding** could compress that column down to a few KB even if the table has billions of rows 😼.
+
+
+### Several different sort orders
+
+- A clever extension of this idea was introduced in *C-Store* and adopted in *Vertica* 
+- Different queries benefit from different sort orders, so why not store the same data sorted in several different ways?
+  - Data needs to be replicated to **multiple machines** anyway, so that you don’t lose data if one machine fails.
+  - You might as well store that **redundant** data **sorted in different ways** so that when you’re processing a query, you can use the version that **best fits** the **query pattern**.
+
+### Writing to Column-Oriented Storage
+
+- Column-oriented storage, compres‐sion, and sorting all help to make those read queries faster. However, they have the 👎 of making writes more difficult 🫤.
+- An update-in-place approach, like **B-trees** use, is not possible with compressed columns. If you wanted to insert a row in the middle of a sorted table, you would most likely have to rewrite all the column files.
+- Solution: ➡️ **LSM-trees**: all writes first go to an in-memory store, where they are added to a sorted structure and prepared for writing to disk. It doesn’t matter whether the in-memory store is row-oriented or column-oriented. When enough writes have **accumulated**, they are **merged** with the column files on disk and written to new files in **bulk**. This is essentially what *Vertica* does.
+
+### Aggregation: Data Cubes and Materialized Views
+
+- If the same aggregates are used by many different queries, it can be **wasteful** to crunch through the raw data every time. Why not cache some of the counts or sums that queries use most often?
+- One way of creating such a cache is a **materialized view**.
+- A common special case of a materialized view is known as a **data cube** or **OLAP cube**. It is a **grid of aggregates** grouped by different dimensions.
+- The 👍 of a materialized data cube is that certain queries become very fast because they have effectively been **precomputed**. For example, if you want to know, the total sales per store yesterday, you just need to look at the totals along the appro‐
+priate dimension—no need to scan millions of rows 🤓.
+- The 👎 is that a data cube doesn’t have the same **flexibility** as querying the raw data. For example, there is no way of calculating which proportion of sales comes from items that cost more than $100, because the **price** isn’t one of the **dimensions** 🫤.
