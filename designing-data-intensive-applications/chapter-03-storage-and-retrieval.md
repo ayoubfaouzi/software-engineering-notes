@@ -13,7 +13,7 @@
 ### Hash indexes
 
 - Key-value stores are quite similar to the dictionary type that you can find in most programming languages, and which is usually implemented as a **hash map** (hash table).
-- Whenever you append a new key-value pair to the file, you also update the hash map to reflect the offset of the data you just wrote (this works both for inserting new keys and for updating existing keys). When you want to look up a value, use the hash map to find the offset in the data file, seek to that location, and read the value. <p align="center"><img src="assets/hash-indexes.png"></p>
+- Whenever you append a new key-value pair to the file, you also update the hash map to reflect the offset of the data you just wrote (this works both for inserting new keys and for updating existing keys). When you want to look up a value, use the hash map to find the offset in the data file, seek to that location, and read the value. <p align="center"><img src="assets/hash-indexes.png" width="400px" height="auto"></p>
 - How do we avoid eventually running out of disk space? A good solution is to break the log into **segments** of a certain size, and to periodically run a background process for **compaction and merging** of segments.
 - **Compaction** means throwing away all key-value pairs in the log except for the most recent update for each key. This makes the segments **much smaller** (assuming that every key is updated multiple times on average), so we can also **merge** several segments into one.
 - Each segment now has its **own in-memory** hash table, mapping keys to file offsets. In order to find the value for a key, we first check the **most recent** segment’s hash map; if the key is not present we check the second-most-recent segment, and so on.
@@ -63,7 +63,7 @@ complex than a KV index but is based on a similar idea:
 - Are the most widely-used indexing structure.
 - Remain the standard index implementation in almost all relational databases, and many non-relational databases use them too.
 - The **log-structured indexes** we saw earlier break the database down into **variable-size segments**, typically several megabytes or more in size, and always write a segment sequentially. By contrast, **B-trees** break the database down into **fixed-size blocks** or pages, traditionally `4 kB` in size, and read or write one page at a time. This corresponds more closely to the underlying hardware, as disks are also arranged in fixed-size blocks.
-- Each page can be identified using an address or location, which allows one page to refer to another—similar to a **pointer**, but on disk instead of in memory. We can use these page references to construct a tree of pages: <p align="center"><img src="assets/b-trees-structure.png"></p>
+- Each page can be identified using an address or location, which allows one page to refer to another—similar to a **pointer**, but on disk instead of in memory. We can use these page references to construct a tree of pages: <p align="center"><img src="assets/b-trees-structure.png" width="400px" height="auto"></p>
 - The number of references to child pages in one page of the B-tree is called the **branching factor**.
 - A four-level tree of 4 KB pages with a branching factor of 500 can store up to 256 TB 🆗.
 
@@ -149,9 +149,9 @@ At first, the same databases were used for both transaction processing and analy
 Database administrators therefore closely **guard** their OLTP databases. They are usually reluctant to let business analysts run **ad hoc** analytic queries on an OLTP database, since those queries are often expensive, scanning large parts of the dataset, which can harm the performance of concurrently executing transactions.
 
 A data warehouse, by contrast, is a separate db that analysts can query to their hearts’ content, without affecting OLTP operations.
-    - Contains a read-only copy of the data in all the various OLTP systems in the company.
-    - Data is extracted from OLTP databases (using either a periodic data dump or a continuous stream of updates), transformed into an analysis-friendly schema, cleaned up, and then loaded into the data warehouse.
-:arrow_forward: This process of getting data into the warehouse is known as Extract–Transform–Load (ETL).
+   - Contains a read-only copy of the data in all the various OLTP systems in the company.
+  - Data is extracted from OLTP databases (using either a periodic data dump or a continuous stream of updates), transformed into an analysis-friendly schema, cleaned up, and then loaded into the data warehouse.
+:arrow_forward: This process of getting data into the warehouse is known as **Extract–Transform–Load** (ETL).
 <p align="center"><img src="assets/datawarehouse-etl.png" width="400px" height="auto"></p>
 
 :+1: A big advantage of using a separate data warehouse, rather than querying OLTP systems directly for analytics, is that the data warehouse can be optimized for analytic access patterns. I
