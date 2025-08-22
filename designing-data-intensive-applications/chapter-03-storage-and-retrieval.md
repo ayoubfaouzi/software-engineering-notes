@@ -13,7 +13,7 @@
 ### Hash indexes
 
 - Key-value stores are quite similar to the dictionary type that you can find in most programming languages, and which is usually implemented as a **hash map** (hash table).
-- Whenever you append a new key-value pair to the file, you also update the hash map to reflect the offset of the data you just wrote (this works both for inserting new keys and for updating existing keys). When you want to look up a value, use the hash map to find the offset in the data file, seek to that location, and read the value. <p align="center"><img src="assets/hash-indexes.png" width="400px" height="auto"></p>
+- Whenever you append a new key-value pair to the file, you also update the hash map to reflect the offset of the data you just wrote (this works both for inserting new keys and for updating existing keys). When you want to look up a value, use the hash map to find the offset in the data file, seek to that location, and read the value. <p align="center"><img src="assets/hash-indexes.png" width="500px" height="auto"></p>
 - How do we avoid eventually running out of disk space? A good solution is to break the log into **segments** of a certain size, and to periodically run a background process for **compaction and merging** of segments.
 - **Compaction** means throwing away all key-value pairs in the log except for the most recent update for each key. This makes the segments **much smaller** (assuming that every key is updated multiple times on average), so we can also **merge** several segments into one.
 - Each segment now has its **own in-memory** hash table, mapping keys to file offsets. In order to find the value for a key, we first check the **most recent** segment’s hash map; if the key is not present we check the second-most-recent segment, and so on.
@@ -63,7 +63,7 @@ complex than a KV index but is based on a similar idea:
 - Are the most widely-used indexing structure.
 - Remain the standard index implementation in almost all relational databases, and many non-relational databases use them too.
 - The **log-structured indexes** we saw earlier break the database down into **variable-size segments**, typically several megabytes or more in size, and always write a segment sequentially. By contrast, **B-trees** break the database down into **fixed-size blocks** or pages, traditionally `4 kB` in size, and read or write one page at a time. This corresponds more closely to the underlying hardware, as disks are also arranged in fixed-size blocks.
-- Each page can be identified using an address or location, which allows one page to refer to another—similar to a **pointer**, but on disk instead of in memory. We can use these page references to construct a tree of pages: <p align="center"><img src="assets/b-trees-structure.png" width="400px" height="auto"></p>
+- Each page can be identified using an address or location, which allows one page to refer to another—similar to a **pointer**, but on disk instead of in memory. We can use these page references to construct a tree of pages: <p align="center"><img src="assets/b-trees-structure.png" width="500px" height="auto"></p>
 - The number of references to child pages in one page of the B-tree is called the **branching factor**.
 - A four-level tree of 4 KB pages with a branching factor of 500 can store up to 256 TB 🆗.
 
@@ -140,7 +140,7 @@ However, databases also started being increasingly used for data analytics, whic
     - What was the total revenue of each of our stores in January?
     - How many more bananas than usual did we sell during our latest promotion?
     - Which brand of baby food is most often purchased together with brand X diapers?
-<p align="center"><img src="assets/olap-vs-oltp.png" width="400px" height="auto"></p>
+<p align="center"><img src="assets/olap-vs-oltp.png" width="500px" height="auto"></p>
 
 At first, the same databases were used for both transaction processing and analytic queries. SQL turned out to be quite flexible in this regard: it works well for OLTP-type queries as well as OLAP-type queries. Nevertheless, in the late 1980s and early 1990s, there was a trend for companies to stop using their OLTP systems for analytics purposes, and to run the analytics on a separate database instead. This separate database was called a *data warehouse*.
 
@@ -152,7 +152,7 @@ A data warehouse, by contrast, is a separate db that analysts can query to their
    - Contains a read-only copy of the data in all the various OLTP systems in the company.
   - Data is extracted from OLTP databases (using either a periodic data dump or a continuous stream of updates), transformed into an analysis-friendly schema, cleaned up, and then loaded into the data warehouse.
 :arrow_forward: This process of getting data into the warehouse is known as **Extract–Transform–Load** (ETL).
-<p align="center"><img src="assets/datawarehouse-etl.png" width="400px" height="auto"></p>
+<p align="center"><img src="assets/datawarehouse-etl.png" width="450px" height="auto"></p>
 
 :+1: A big advantage of using a separate data warehouse, rather than querying OLTP systems directly for analytics, is that the data warehouse can be optimized for analytic access patterns. I
 
@@ -167,7 +167,7 @@ On the surface, a data warehouse and a relational OLTP database look similar, be
   - At the center of the schema is a so-called **fact table** (in this example, it is called fact_sales).
   - Each row of the fact table represents an event that occurred at a particular time (here, each row represents a customer’s purchase of a product). If we were analyzing website traffic rather than retail sales, each row might represent a page view or a click by a user.
   - Other columns in the fact table are **FK references** to other tables, called **dimension tables**. As each row in the fact table represents an event, the dimensions represent the *who*, *what*, *where*, *when*, *how*, and *why* of the event.
-<p align="center"><img src="assets/fact-table.png" width="400px" height="auto"></p>
+<p align="center"><img src="assets/fact-table.png" width="450px" height="auto"></p>
 
 - A variation of this template is known as the **snowflake schema**, where dimensions are further broken down into subdimensions. For example, there could be separate tables for *brands* and *product* categories, and each row in the `dim_product` table could reference the brand and category as FKs, rather than storing them as strings in the `dim_product` table.
 - Snowflake schemas are **more normalized** than star schemas, but star schemas are often preferred because they are **simpler** for analysts to work with 🤷‍♀️.
@@ -181,7 +181,7 @@ On the surface, a data warehouse and a relational OLTP database look similar, be
 ### Column Compression
 
 - Column-oriented storage often lends itself very well to **compression**. Take a look at the sequences of values for each column in figure below: they often look quite repetitive, which is a good sign for compression.
-<p align="center"><img src="assets/fact-table.png" width="400px" height="auto"></p>
+<p align="center"><img src="assets/fact-table.png" width="450px" height="auto"></p>
 
 > 💡 Column-oriented storage and column families *Cassandra* and *HBase* have a concept of column families, which they inherited from *Bigtable*. However, it is very **misleading** to call them **column-oriented**: within each **column family**, they store all columns from a row together, along with a row key, and they do not use column compression. Thus, the *Bigtable* model is still mostly row-oriented.
 

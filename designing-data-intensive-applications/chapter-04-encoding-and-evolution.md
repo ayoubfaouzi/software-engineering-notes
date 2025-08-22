@@ -50,7 +50,56 @@ issues, they also have some subtle problems:
 - Field tags are like aliases for fields—they are a compact way of saying what field we’re talking about, without having to spell out the field name.
 - Each field has a **type annotation** and, where required, a length indication (length of a string, number of items in a list). <p align="center"><img src="assets/thrift-binary-protocol.png" width="400px" height="auto"></p>
 - The Thrift **CompactProtocol** encoding is semantically equivalent to **BinaryProtocol** it packs the same information into only **34 bytes**. It does this by packing the **field type** and **tag number** into a **single byte**, and by using **variable-length integers**. Rather than using a full eight bytes for the number `1337`, it is encoded in two bytes, with the **top bit** of each byte used to indicate whether there are still more bytes to come. This means numbers between `64` and `63` are encoded in
-1 byte, numbers between `8192` and `8191` are encoded in 2 bytes, etc. Bigger numbers use more bytes. <p align="center"><img src="assets/thrift-compact-protocol.png" width="400px" height="auto"></p>
-- Finally, **Protocol Buffers** does the bit packing slightly differently, but is otherwise very similar to Thrift’s CompactProtocol. Protocol Buffers fits the same record in 33 bytes. <p align="center"><img src="assets/protocol-buffers.png" width="400px" height="auto"></p>
+1 byte, numbers between `8192` and `8191` are encoded in 2 bytes, etc. Bigger numbers use more bytes. <p align="center"><img src="assets/thrift-compact-protocol.png" width="450px" height="auto"></p>
+- Finally, **Protocol Buffers** does the bit packing slightly differently, but is otherwise very similar to Thrift’s CompactProtocol. Protocol Buffers fits the same record in 33 bytes. <p align="center"><img src="assets/protocol-buffers.png" width="450px" height="auto"></p>
 
-## Field tags and schema evolution
+### Field tags and schema evolution
+
+- As you can see from the examples, an encoded record is just the **concatenation** of its **encoded fields**.
+  - Each field is identified by its tag number and annotated with a datatype.
+  - If a field value is not set, it is simply omitted from the encoded record.
+  - From this you can see that field tags are critical to the meaning of the encoded data. You can change the name of a field in the schema, since the **encoded data never refers to field names**, but you cannot change a field’s tag, since that would make all existing encoded data invalid ⚠️.
+- If **old code** (which doesn’t know about the new tag numbers you added) tries to **read data written by new code**, including a new field with a tag number it doesn’t recognize, it can simply ignore that field. The datatype annotation allows the parser to determine **how many bytes it needs to skip**. This maintains **forward compatibility**: old code can read records that were written by new code.
+- What about **backward compatibility**? As long as each field has a unique tag number, **new code can always read old data**, because the **tag numbers** still have the **same meaning**. The only detail is that if you **add a new field**, you **cannot make it required** ⚠️. If you were to add a field and make it `required`, that check would fail if new code read data written by old code, because the old code will not have written the new field that you added. Therefore, to maintain backward compatibility, every field you add after the initial deployment of the schema must be `optional` or have a **default value**.
+- Removing a field is just like adding a field, with backward and forward compatibility concerns reversed.
+  - That means you can only remove a field that is `optional` (a `required` field can never be removed ⚠️), and you can never use the **same tag number** again (because you may still have data written somewhere that includes the old tag number, and that field must be ignored by new code).
+
+### Datatypes and schema evolution
+
+- What about changing the datatype of a field? 
+  - May be possible but there is a risk that values will **lose precision** or get **truncated**.
+- A curious detail of **Protocol Buffers** is that it does not have a list or array datatype, but instead has a `repeated` marker for fields.
+  - The encoding of a repeated field is just what it says on the tin: the same field tag simply appears multiple times in the record.
+  - ➡️ This has the nice effect that it’s okay to change an optional (single-valued) field into a repeated (multi-valued) field.
+- **Thrift** has a dedicated list datatype, which is parameterized with the datatype of the list elements. This **does not allow** the same evolution from single-valued to multi-valued as PB does, but it has the advantage of supporting **nested lists**.
+
+## Avro
+
+- It was started in 2009 as a subproject of Hadoop, as a result of Thrift not being a **good fit** for `Hadoop’s` use cases.
+- It has two schema languages: one (Avro IDL) intended for human editing, and one (based on JSON) that is more easily machine-readable:
+  ```json
+  {
+    "type": "record",
+    "name": "Person",
+    "fields": [
+      {"name": "userName", "type": "string"},
+      {"name": "favoriteNumber", "type": ["null", "long"], "default": null},
+      {"name": "interests", "type": {"type": "array", "items": "string"}}
+    ]
+  }
+  ```
+- Notice that there are **no tag numbers** in the schema. If we encode our example record using this schema, the Avro binary encoding is just **32 bytes** long - the most compact of all the encodings we have seen.
+- If you examine the byte sequence, you can see that there is nothing to identify fields or their datatypes. The encoding simply consists of values concatenated together. <p align="center"><img src="assets/avro.png" width="450px" height="auto"></p>
+- To parse the binary data, you go through the fields **in the order** that they appear in the schema and use the schema to tell you the datatype of each field. This means that the binary data can only be decoded correctly if the code reading the data is using the **exact same schema** as the code that wrote the data. Any mismatch in the schema between the reader and the writer would mean incorrectly decoded data. So, how does Avro support schema evolution 🤔?
+
+### The writer’s schema and the reader’s schema
+
+- Data is **encoded** using a **writer's schema** and **decoded** using a **reader's schema**.
+- The writer's schema is the version of the data's schema that the application creating the data knows about. The reader's schema is the version the application receiving the data expects it to be in.
+- The key idea with Avro is that the writer’s schema and the reader’s schema **don’t have** to be **the same** - they only need to be **compatible** 🦊.
+- Avro handles schema differences between a reader and a writer through a process called **schema resolution**. The Avro library resolves the discrepancies by comparing the two schemas side by side and transforming the data as needed.
+  - **Field Mismatch**: Fields are matched **by name**, not by their position in the schema.
+  - **New Field**: If a field exists in the writer's schema but not in the reader's, the Avro library will **ignore it**.
+  - **Missing Field**: If a field exists in the reader's schema but not in the writer's, it will be filled with the **default value** specified in the reader's schema.
+
+### Schema evolution rules
