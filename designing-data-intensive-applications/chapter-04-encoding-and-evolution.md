@@ -1,4 +1,4 @@
-# Chapter 3. Encoding and Evolution
+# Chapter 4. Encoding and Evolution
 
 - When a data format or schema changes, a corresponding change to application code often needs to happen. However, in a large application, code changes often cannot happen instantaneously:
   - With **server-side** apps you may want to perform a **rolling upgrade** (also known as a **staged rollout**).
