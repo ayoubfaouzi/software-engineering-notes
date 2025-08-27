@@ -71,4 +71,35 @@ Logical logs **decouple** replication from **storage engine** internals by recor
 
 Replication is usually handled by the database itself, but in cases needing more **flexibility** — like **selective replication**, **cross-database** replication, or **conflict resolution** — it can be moved to the **application** layer. Tools like `Oracle GoldenGate` read database logs, while triggers and stored procedures let custom code capture and replicate changes. Although trigger-based replication is **slower** and more **error-prone** than built-in methods, it remains valuable for its flexibility.
 
-### Problems with Replication Lag
+## Problems with Replication Lag
+
+For read-heavy workloads, databases often use a **leader–follower** replication model: writes go to the leader, while reads are distributed across many followers to scale capacity and reduce load. This usually requires **asynchronous** replication, since synchronous replication to all followers would make the system **fragile** — any single node or network failure could block writes.
+
+The trade-off is **replication lag**: followers may return outdated data compared to the leader, causing **eventual consistency**. Normally, lag is small (fractions of a second 🤔), but under heavy load or network issues it can grow to **seconds or minutes**, creating real problems for applications.
+
+### Reading Your Own Writes
+
+When users submit data (e.g., a profile update, comment, or record), the write goes to the leader, but reads are often served from followers for scalability. With asynchronous replication, this causes a problem: if the user **immediately reads after writing**, their update may not have reached the replica yet. It looks like their data was lost, creating a bad user experience 🤷‍♀️.
+
+The solution is **read-after-write consistency** (a.k.a. *read-your-writes* consistency): users must always see their own updates, even if followers are lagging.
+
+- Ways to achieve this in leader-based replication:
+- **Selective leader reads**: Read potentially user-modified data (e.g., a user’s own profile) from the leader, but use followers for other data.
+- **Time-based fallback**: After a user write, read from the leader for a short period (e.g., 1 minute) or avoid lagging replicas.
+- **Timestamps**: Track the user’s last write timestamp; ensure followers serving reads are up-to-date at least to that point (using logical or physical clocks).
+- **Multi-datacenter routing**: If replicas span regions, route reads that need the leader to the leader’s datacenter.
+
+#### Monotonic Reads
+
+When reading from asynchronous replicas, users may sometimes see data move **backward** in time. For example, a user might first read from a replica that has recent data, then from a more lagging replica where that update hasn’t appeared yet — making the data seem **to disappear** 🤦.
+
+**Monotonic reads** prevent this anomaly by ensuring that once a user has seen newer data, they won’t later see older data. It’s **weaker** than **strong consistency** but **stronger** than **eventual consistency**.
+
+A common way to implement it is to route all of a user’s reads to the **same replica** (e.g., by hashing the user ID), though if that replica fails, rerouting must ensure the replacement is at least as up to date.
+
+#### Consistent Prefix Reads
+
+- Replication lag can cause **causality violations**, where events appear **out of order** (e.g., an answer showing up before the corresponding question).
+- This anomaly is prevented by **consistent prefix reads**, which guarantee that if writes occur in a certain order, readers will always see them in that order.
+- The issue is common in **partitioned/sharded** databases, since different partitions may apply writes independently without a global order.
+- Solutions include co-locating causally related writes in the same partition or using algorithms that track causal dependencies. <p align="center"><img src="assets/replication-lag-out-of-order.png" width="500px" height="auto"></p>
