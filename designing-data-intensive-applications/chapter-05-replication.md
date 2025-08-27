@@ -81,9 +81,7 @@ The trade-off is **replication lag**: followers may return outdated data compare
 
 When users submit data (e.g., a profile update, comment, or record), the write goes to the leader, but reads are often served from followers for scalability. With asynchronous replication, this causes a problem: if the user **immediately reads after writing**, their update may not have reached the replica yet. It looks like their data was lost, creating a bad user experience 🤷‍♀️.
 
-The solution is **read-after-write consistency** (a.k.a. *read-your-writes* consistency): users must always see their own updates, even if followers are lagging.
-
-- Ways to achieve this in leader-based replication:
+The solution is **read-after-write consistency** (a.k.a. *read-your-writes* consistency): users must always see their own updates, even if followers are lagging. Ways to achieve this in leader-based replication:
 - **Selective leader reads**: Read potentially user-modified data (e.g., a user’s own profile) from the leader, but use followers for other data.
 - **Time-based fallback**: After a user write, read from the leader for a short period (e.g., 1 minute) or avoid lagging replicas.
 - **Timestamps**: Track the user’s last write timestamp; ensure followers serving reads are up-to-date at least to that point (using logical or physical clocks).
@@ -103,3 +101,40 @@ A common way to implement it is to route all of a user’s reads to the **same r
 - This anomaly is prevented by **consistent prefix reads**, which guarantee that if writes occur in a certain order, readers will always see them in that order.
 - The issue is common in **partitioned/sharded** databases, since different partitions may apply writes independently without a global order.
 - Solutions include co-locating causally related writes in the same partition or using algorithms that track causal dependencies. <p align="center"><img src="assets/replication-lag-out-of-order.png" width="500px" height="auto"></p>
+
+#### Solutions for Replication Lag
+
+Replication lag in **eventually consistent** systems can cause a poor user experience. While it's fine if an application can handle delays of minutes or hours, systems that can't, should be designed for stronger guarantees, like **read-after-write** consistency.
+
+Although an application can be coded to handle these issues by directing specific reads to the leader, this approach is **complex** and prone to **errors**. It's more ideal for the database to handle these guarantees, which is the purpose of *transactions*.
+
+Many distributed databases have moved away from **single-node transactions**, arguing they are too costly for performance and availability, and that **eventual consistency** is a **necessary** trade-off for scalability 👨‍🔬. However, this is a simplistic view. The book will explore a more nuanced perspective on transactions and alternative mechanisms in later chapters.
+
+## Multi-Leader Replication
+
+- Leader-based replication centralizes all writes on one node, creating a SPOF.
+- Multi-leader replication (also known as *master-master* or *active/active* replication) allows multiple nodes to accept writes and replicate to each other, improving **availability** since writes can continue even if one leader fails.
+
+### Use Cases for Multi-Leader Replication
+
+#### Multi-datacenter operation
+
+In **multi-datacenter** deployments, **single-leader replication** forces all writes through one datacenter, causing latency, sensitivity to network issues, and reliance on failover if the leader’s datacenter fails. Multi-leader replication allows **each datacenter** to process **local writes** and **asynchronously** replicate across datacenters, improving performance and resilience to outages or network problems.
+
+Despite these benefits, multi-leader replication has a major 👎: **write conflicts**. When the same data is modified in two different datacenters simultaneously, these conflicts must be resolved. Because this feature is often added to databases as an afterthought, it can lead to complex issues with features like **auto-incrementing keys**, **triggers**, and **integrity constraints**, making it a potentially problematic and risky configuration to implement ⚠️.
+
+#### Clients with offline operation
+
+Multi-leader replication is an excellent choice for applications that require **offline operation**, such as **calendar apps** on **mobile devices**. In this model, each device has a **local database** that acts as a leader, accepting both read and write requests while disconnected from the internet.
+
+When the device comes back online, an asynchronous multi-leader replication process **syncs** the changes with a central server and other devices. The **replication lag** can be **significant**, potentially hours or even days.
+
+Architecturally, this is similar to multi-datacenter replication, but with an extremely unreliable network connection between "datacenters" (the devices). Getting this right can be difficult, as evidenced by the many flawed synchronization implementations 🤷. However, some tools, like `CouchDB`, are specifically designed to facilitate this type of multi-leader setup.
+
+#### Real-Time Collaborative Editing
+
+Apps like *Etherpad* and *Google Docs* let multiple users edit documents simultaneously. Each user’s edits apply immediately to their local replica and are asynchronously synced to the server and other users.
+
+With **strict locking**, edits happen sequentially — this is like single-leader replication with transactions. For smoother collaboration (e.g., keystroke-level changes), locking is avoided, enabling concurrent edits. This model resembles multi-leader replication, requiring conflict resolution to handle simultaneous changes.
+
+### Handling Write Conflicts
