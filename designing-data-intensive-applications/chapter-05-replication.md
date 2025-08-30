@@ -246,3 +246,47 @@ A replication topology describes the communication paths along which writes are 
 - *Riak*: replication is **local** to **one datacenter**; `n` applies within a datacenter. Cross-datacenter sync happens **asynchronously** between clusters, similar to multi-leader replication.
 
 ### Detecting Concurrent Writes
+
+- Multiple clients can concurrently write to the **same key**, causing conflicts even with **strict quorums**.
+- Conflicts may also arise during **read repair** or **hinted handoff** due to **network delays** or **partial failures**.
+- Example: different nodes may receive client writes in different orders, leading to permanent inconsistency if values are simply overwritten.
+- For **eventual consistency**, replicas must **converge** on the same value.
+- However, most implementations provide **weak conflict resolution** — the burden often falls on the application developer to understand database internals and avoid data loss.
+
+#### Last write wins (discarding concurrent writes)
+
+- One way to ensure convergence is to keep only the most **“recent”** value and discard older ones.
+- Since concurrent writes have **no natural order**, systems impose an arbitrary order (e.g., **timestamps**).
+- `LWW` = choose the write with the largest timestamp as the winner.
+- Supported in *Cassandra* (default) and *Riak* (optional).
+- Trade-offs:
+  - Ensures **convergence** but sacrifices **durability** → some successful writes may be silently lost.
+  - Can even drop non-concurrent writes due to timestamp issues.
+- Acceptable in cases like **caching**, but unsafe where data loss is not acceptable.
+- Safe use requires treating keys as **immutable** (e.g., using a `UUID` per write).
+
+#### The “happens-before” relationship and concurrency
+
+- **Not concurrent**: If one operation **builds upon** or **depends on** the result of another (**causal dependency**).
+  - Example: Insert → Increment (increment depends on inserted value).
+- **Concurrent**: If neither operation **knows** about the other when executed → no causal dependency.
+  - Example: Two clients write to the same key independently.
+- Rule:
+  - Operation `A` happens before `B` if `B` knows about, depends on, or builds upon `A`.
+  - Two operations are concurrent if neither happens before the other.
+- Implication for conflict resolution:
+  - If one happened before the other → later operation should overwrite earlier.
+If concurrent → they conflict and require resolution.
+> 💡 In distributed systems, concurrency is not defined by whether two operations happen at the exact same physical time. Instead, two operations are considered concurrent if they are both unaware of each other.
+> This is because:
+>  - It is difficult to know if events happened at precisely the same time due to unreliable clocks.
+>  - The concept is compared to the theory of relativity, where events cannot affect each other if information cannot travel between them faster than light.
+>  - In computer systems, operations can be concurrent even if they occur some time apart, as long as network issues or delays prevent them from knowing about each other.
+
+#### Capturing the happens-before relationship
+
+- To handle concurrent writes on a single database replica. The core idea is that the server tracks a **version number** for each key, which increases with every write. When a **client** sends a new value, it must **include** the version number it last saw.
+- The server uses this to determine the relationship between writes:
+  - If the client's version number is older, the new write is considered to **supersede** the previous value but must be **merged** with any other concurrent writes.
+  - If the client's version number is a **peer** to the latest version, the writes are concurrent. The server keeps all concurrent values and returns them to the client for merging.
+- The key takeaway is that the system **doesn't pick** a "**winner**"; instead, it preserves all concurrent data and pushes the responsibility of resolving the conflict (merging the values) back to the client on its next read or write. This example demonstrates how multiple values can be created and merged over time to ensure no data is silently lost.
