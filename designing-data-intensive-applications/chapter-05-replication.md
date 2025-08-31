@@ -290,3 +290,20 @@ If concurrent → they conflict and require resolution.
   - If the client's version number is older, the new write is considered to **supersede** the previous value but must be **merged** with any other concurrent writes.
   - If the client's version number is a **peer** to the latest version, the writes are concurrent. The server keeps all concurrent values and returns them to the client for merging.
 - The key takeaway is that the system **doesn't pick** a "**winner**"; instead, it preserves all concurrent data and pushes the responsibility of resolving the conflict (merging the values) back to the client on its next read or write. This example demonstrates how multiple values can be created and merged over time to ensure no data is silently lost.
+
+#### Merging concurrently written values
+
+- In leaderless replication systems like *Riak*, concurrent writes create **siblings** (multiple conflicting values). - Clients must resolve these conflicts.
+  - Naive resolution: pick one value (e.g., **LRW**) → simple but may lose data.
+  - Smarter resolution: depends on application logic. Example: shopping cart → merge by **union** of items.
+  - Problem with **deletions**: `union` reintroduces removed items. To fix this, systems use **tombstones** (deletion markers with version numbers).
+  - Automatic resolution: *Riak* supports **CRDTs** that merge siblings automatically, including handling deletions.
+
+#### Version vectors
+
+- In leaderless replication with multiple replicas, a **single version** number is **not enough** to track dependencies.
+  - Each **replica** maintains its **own version number** per key and tracks those from others.
+  - The combined set is a **version vector** (or *dotted version vector* in `Riak 2.0`).
+  - Clients receive version vectors when reading and must send them back when writing (Riak calls this the **causal context**).
+  - Version vectors let the system distinguish between **overwrites** and **concurrent writes**.
+  - Concurrent writes may still produce siblings, but no data is lost if the application merges them correctly.
