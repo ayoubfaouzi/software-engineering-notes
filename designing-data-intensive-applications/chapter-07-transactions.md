@@ -98,7 +98,7 @@
   - Transactions simplify correctness by handling these automatically.
 - 👉 Transactions aren’t strictly required, but they greatly **reduce complexity** and prevent data inconsistencies in relational, document, and indexed databases.
 
-### Weak Isolation Levels
+## Weak Isolation Levels
 
 - Transactions that don’t access the same data can run in parallel safely.
 - Concurrency issues happen when:
@@ -122,11 +122,127 @@
   - Understand concurrency problems and isolation levels.
   - Choose the right isolation level for your app’s needs.
 
-#### Read Committed
+### Read Committed
 
 - The most basic level of transaction isolation is read committed. It makes two guarantees:
   1. When reading from the database, you will only see data that has been committed (**no dirty reads**).
   2. When writing to the database, you will only overwrite data that has been committed (**no dirty writes**).
 
-##### No dirty reads
+#### No dirty reads
 
+- Dirty reads happen when a transaction **sees** data written by **another transaction** that **hasn’t committed** yet.
+- At the read committed isolation level, dirty reads are prevented: writes only become visible once a transaction commits, and all changes appear at once.
+- Why prevent dirty reads ❓
+  - To avoid showing partial updates (inconsistent state, e.g., unread email shown but counter not updated).
+  - To avoid exposing data that may later be rolled back, making reasoning about correctness very difficult.
+
+#### No dirty writes
+
+- Dirty writes occur when a transaction **overwrites** data written by **another transaction** that **hasn’t yet committed**.
+- At the read committed isolation level, dirty writes are prevented by delaying later writes until the earlier transaction commits or aborts.
+- Why prevent dirty writes ❓
+  - Prevents inconsistencies when multiple objects must be updated together (e.g., car sale assigned to Bob but invoice sent to Alice).
+  - Still does not prevent other issues like lost updates (e.g., race conditions on counters), which require additional mechanisms.
+
+#### Implementing read committed
+
+- **Read committed** is the **default isolation level** in many databases (*Oracle*, *PostgreSQL*, *SQL Server*, etc.).
+-Dirty writes are prevented using **row-level locks**: only one transaction can hold a write lock on an object, and others must wait until it commits or aborts.
+- Dirty reads could in theory be prevented by requiring read locks, but that would block many readers behind **long-running writes**, causing **poor performance** 🫤.
+- Instead, most databases **keep both** the **old committed** value and the **new uncommitted** value. Readers see the old value until the write is committed, then they switch to the new value.
+
+### Snapshot Isolation and Repeatable Read
+
+- Read committed provides useful guarantees (atomicity, no dirty reads, no dirty writes), but still allows anomalies.
+- Problem: It permits **nonrepeatable reads** / **read skew** — a transaction may see data at different points in time, leading to inconsistencies (e.g., Alice sees $900 instead of $1,000 during a transfer).
+- This inconsistency is temporary for users but can cause serious issues in:
+  - **Backups** → mixed old/new data can make inconsistencies permanent.
+  - **Analytics / integrity checks** → long-running queries may return nonsensical results.
+- 👉 **Snapshot isolation**, where each transaction sees a consistent snapshot of the database as of its start.
+  - Great for long-running, read-only queries like backups and analytics.
+  - Widely supported (*PostgreSQL*, *MySQL/InnoDB*, *Oracle*, *SQL Server*, etc.).
+
+#### Implementing snapshot isolation
+
+- Snapshot isolation uses **write locks** to prevent **dirty writes**, but reads don’t use locks.
+- Key principle: *readers never block writers*, and *writers never block readers*, allowing long-running queries to run on a consistent snapshot **without blocking updates**.
+- It is implemented via **multi-version concurrency control** (MVCC):
+  - Multiple committed versions of each object are kept, so different transactions can see the database as of different points in time.
+  - Read committed under MVCC → each query sees its own snapshot.
+  - Snapshot isolation → the whole transaction uses the same snapshot.
+- Mechanism (PostgreSQL example):
+  - Each transaction has a unique transaction ID (txid).
+  - Rows have `created_by` (who inserted them) and `deleted_by` (who marked them for deletion).
+  - Deletes mark rows as removed but don’t physically delete them until garbage collection runs.
+  - **Updates** are implemented as **delete + create**, so multiple versions of a row can exist simultaneously.
+<p align="center"><img src="assets/snapshot-isolation.png" width="450px" height="auto"></p>
+
+#### Visibility rules for observing a consistent snapshot
+
+- In snapshot isolation, **transaction IDs** determine which data is visible to a transaction, ensuring a consistent snapshot:
+  1. At the start, the database notes all **in-progress** transactions → their writes are ignored.
+  2. Writes from aborted transactions are ignored.
+  3. Writes from later transactions (with higher IDs) are ignored.
+  4. All other writes are visible.
+- Visibility rule:
+  - The creator transaction must have committed before the reader started.
+  - If deleted, the deleter transaction must not have committed before the reader started.
+- 👉 This means long-running transactions can keep seeing old data even after it’s overwritten or deleted, because updates create new versions rather than modifying rows in place. This design provides consistent snapshots with low overhead.
+
+#### Indexes and snapshot isolation
+
+- In multi-version databases, indexes must handle multiple versions of objects:
+  - One approach: indexes point to all versions, and queries filter out versions not visible to the transaction. Old versions and their index entries are removed by garbage collection.
+  - *PostgreSQL* optimizes by sometimes avoiding index updates if multiple versions fit on the same page.
+  - *CouchDB*, *Datomic*, *LMDB* use **append-only** / **copy-on-write** B-trees:
+    - Updates don’t overwrite pages but create new versions of modified pages up to the root.
+    - Each **root** represents a **consistent snapshot** of the database.
+    - No need for transaction ID filtering since old trees remain immutable.
+    - Requires background compaction and garbage collection.
+- 👉 In short: traditional MVCC relies on filtering + GC, while append-only B-trees provide snapshot isolation naturally by design.
+
+#### Repeatable read and naming confusion
+
+- Snapshot isolation is valuable for read-only transactions, but its naming varies:
+  - *Oracle* calls it **serializable**.
+  - *PostgreSQL* and **MySQL** call it **repeatable read**.
+- This confusion comes from the SQL standard, which didn’t include snapshot isolation (it was defined later) and instead defined repeatable read 🤷, which looks similar. Databases use the name to claim standards *compliance*.
+- However:
+  - The SQL standard’s isolation definitions are vague and inconsistent.
+  - Different databases provide different guarantees under repeatable read.
+  - Formal definitions exist, but most implementations don’t follow them.
+  - To add to the mess, *IBM DB2* uses **repeatable read** to mean **serializability** 😸.
+- 👉 Bottom line: the term repeatable read is ambiguous—its meaning differs across databases.
+
+### Preventing Lost Updates
+
+- So far, **read committed** and **snapshot isolation** mainly addressed what **read-only** transactions can see with **concurrent writes**. But when two transactions write concurrently, other conflicts arise — most notably the **lost update** problem.
+- A lost update happens in a *read-modify-write cycle*: if two transactions read a value, modify it, and both write back, one update can overwrite (*clobber*) the other.
+- Examples:
+  - Incrementing counters or balances
+  - Editing complex values (e.g., lists in JSON)
+  - Concurrent wiki page edits where one user’s save overwrites another’s.
+
+#### Atomic write operations
+
+- Atomic update operations let databases handle modifications safely without needing application-level *read-modify-write* cycles.
+- Examples: `UPDATE ... SET value = value + 1`, *MongoDB*’s partial JSON updates, *Redis*’s data structure operations.
+- They’re ideal when the update **fits** into **an atomic operation**; less so for complex edits like wiki pages.
+- Typically implemented with **exclusive locks** (*cursor stability*) or **single-thread** execution.
+- ORM frameworks can hide atomic options, leading developers to accidentally use unsafe *read-modify-write* cycles, which may introduce subtle bugs.
+
+#### Explicit locking
+
+- If atomic operations aren’t enough, applications can prevent lost updates by explicitly locking objects before performing a read-modify-write cycle.
+- Example: In a multiplayer game, a piece’s move may involve complex logic, so the application locks the row (`FOR UPDATE`) before reading and updating it.
+- This ensures that concurrent transactions trying to access the same object must wait until the lock is released.
+- ⚠️ Developers must carefully place locks; missing one can introduce race conditions.
+
+#### Automatically detecting lost updates
+
+- Besides atomic operations and locks, another way to prevent lost updates is automatic detection and retry:
+- Transactions execute in parallel, but if a **lost update is detected**, the transaction is **aborted and retried**.
+  - This works efficiently with snapshot isolation 👍.
+  - `PostgreSQL` (*repeatable read*), `Oracle` (*serializable*), and `SQL Server` (*snapshot isolation*) support it.
+  - `MySQL/InnoDB`’s repeatable read does not detect lost updates, so by some definitions it doesn’t fully provide snapshot isolation.
+- Advantage: developers don’t need to write special code; lost updates are automatically handled, reducing bugs 🥸.
