@@ -77,7 +77,7 @@
 - Storage engines ensure **atomic single-object writes** (via crash-recovery logs) and isolation (via per-object locks).
 - Extra features:
   - Some DBs provide atomic operations like:
-    - increment (avoids read-modify-write race conditions).
+    - increment (avoids **read-modify-write** race conditions).
     - compare-and-set (update only if value hasn’t changed).
   - These help prevent lost updates in concurrent writes.
 - ⚠️ But:
@@ -154,7 +154,7 @@
 ### Snapshot Isolation and Repeatable Read
 
 - Read committed provides useful guarantees (atomicity, no dirty reads, no dirty writes), but still allows anomalies.
-- Problem: It permits **nonrepeatable reads** / **read skew** — a transaction may see data at different points in time, leading to inconsistencies (e.g., Alice sees $900 instead of $1,000 during a transfer).
+- Problem: It permits **nonrepeatable reads** / **read skew** — a transaction may see data at different points in time, leading to inconsistencies (e.g., Alice sees `$900` instead of `$1,000` during a transfer).
 - This inconsistency is temporary for users but can cause serious issues in:
   - **Backups** → mixed old/new data can make inconsistencies permanent.
   - **Analytics / integrity checks** → long-running queries may return nonsensical results.
@@ -246,3 +246,52 @@
   - `PostgreSQL` (*repeatable read*), `Oracle` (*serializable*), and `SQL Server` (*snapshot isolation*) support it.
   - `MySQL/InnoDB`’s repeatable read does not detect lost updates, so by some definitions it doesn’t fully provide snapshot isolation.
 - Advantage: developers don’t need to write special code; lost updates are automatically handled, reducing bugs 🥸.
+
+#### Compare-and-set (CAS)
+
+- Some databases without full transactions provide an **atomic compare-and-set** operation to prevent lost updates.
+- It works by updating a value only if it hasn’t changed since you last read it, otherwise the update fails and must be retried.
+  - For example, updating a wiki page only if its content still matches the old version.
+- However, safety depends on the database: if the `WHERE` clause can read from an old snapshot, lost updates may still occur.
+- Always verify whether your database’s compare-and-set is truly safe before relying on it.
+
+#### Conflict resolution and replication
+
+- In **replicated** databases, preventing lost updates is **harder** because data can be modified concurrently on multiple nodes.
+- **Locks** and **CAS** don’t work since there isn’t a single authoritative copy. Instead, systems often allow concurrent writes to create conflicting versions (siblings), which must later be merged by the application or special data structures.
+- Commutative atomic operations (like counters or sets) work well since order doesn’t matter, as in *Riak 2.0* datatypes that merge updates without loss.
+- In contrast, **LWW** conflict resolution discards concurrent updates and is prone to lost updates, even though it is the default in many replicated databases 🤷.
+
+### Write Skew and Phantoms
+
+- Beyond dirty writes and lost updates, there is also another race condition that can happen (**write skew** 🤓):
+  - Example: In a hospital shift scheduling app, each doctor can go off call only if at least one remains.
+  - With snapshot isolation, two doctors (Alice and Bob) both see two doctors on call and simultaneously remove themselves
+  - Both transactions commit, leaving no doctors on call, violating the rule.
+- This illustrates how concurrent checks and updates, even under snapshot isolation, can still cause correctness issues 🤷‍♂️.
+
+#### Characterizing write skew
+
+- Unlike dirty writes or lost updates, it happens when two concurrent transactions **read the same objects** and then **update different ones**, leading to conflicts that wouldn’t occur if executed sequentially.
+- 🔑 points:
+  - It’s a generalization of lost updates: if both updated the same object, it would reduce to a lost update or dirty write.
+  - Atomic single-object ops and lost update detection under snapshot isolation don’t prevent it.
+  - Preventing write skew **requires** true **serializable isolation**.
+  - Some databases support **constraints**, but multi-object constraints (like “at least one doctor must remain on call”) often require **triggers** or **materialized views**.
+- Without serializable isolation, the alternative is to **explicitly lock rows** the transaction depends on:
+  ```sql
+  BEGIN TRANSACTION;
+
+  SELECT * FROM doctors
+  WHERE on_call = true
+  AND shift_id = 1234 FOR UPDATE;
+
+  UPDATE doctors
+  SET on_call = false
+  WHERE name = 'Alice'
+  AND shift_id = 1234;
+
+  COMMIT;
+  ```
+
+#### More examples of write skew
