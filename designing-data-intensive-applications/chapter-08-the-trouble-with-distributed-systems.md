@@ -207,3 +207,88 @@
 - 👉 These methods don’t eliminate GC pauses but make their effects much less harmful.
 
 ## Knowledge, Truth, and Lies
+
+- Distributed systems differ from single-computer programs because they lack shared memory, rely on unreliable message passing, face variable delays, partial failures, clock issues, and pauses.
+- Nodes cannot know other nodes’ state with **certainty** —they can only infer from received or missing messages.
+  - Network issues and node failures are indistinguishable.
+  - This raises philosophical questions of truth and causality in systems 🧔‍♂️.
+-👉 Define a **system model** (**assumptions about behavior**) and design algorithms proven to work under that model. Reliable behavior is possible, but achieving it is complex.
+
+### The Truth Is Defined by the Majority
+
+- Nodes in distributed systems can be wrongly declared **dead** due to asymmetric faults (node can receive but not send), unacknowledged messages, or pauses like garbage collection
+- From the faulty node’s perspective, it may still seem alive, but other nodes cannot communicate with it and thus mark it as dead.
+- This highlights that individual nodes cannot be **trusted** to judge their **own state**. Instead, distributed systems rely on **quorums** — majority voting among nodes — to make decisions, including declaring nodes dead.
+- A quorum ensures safety (only one majority can exist) and fault tolerance (the system continues working despite some node failures). This principle underpins **consensus algorithms**.
+
+#### The leader and the lock
+
+- In distributed systems, certain resources must have **only one owner** at a time (e.g., a leader node, a lock holder, or a unique username).
+- However, a node’s belief that it is “the chosen one” may conflict with the **majority’s view** if it was declared dead or replaced due to faults like pauses or network issues.
+- If such a node keeps acting as leader or lock holder, it can cause **inconsistencies** or **corruption**.
+  - For example, in *HBase*, a paused client’s lock lease could expire and be reassigned; when the client resumed, it still thought it held the lease and wrote to the file, causing **data corruption**.
+- The lesson: systems must carefully enforce **quorum agreement** to prevent multiple conflicting owners.
+
+#### Fencing tokens
+
+- To prevent nodes with outdated leases from corrupting a system, **fencing** is used.
+- Each time a lock or lease is granted, the lock service issues a **monotonically** increasing f**encing token**.
+- Clients must **include this token** with their **write requests**.
+- The resource (e.g., storage server) accepts only requests with the **highest token** seen so far and rejects older ones.
+- Systems like *ZooKeeper* provide suitable tokens (e.g., *zxid*, *cversion*).
+- Crucially, the **resource itself** must **enforce token checks**, since **clients** cannot be **trusted** to behave correctly. This ensures safety even if clients are faulty, paused, or malicious.
+
+### Byzantine Faults
+
+- Fencing tokens protect against **accidental** errors but not against **malicious** nodes that forge tokens.
+- The text assumes nodes are **unreliable but honest**, not deceptive. When nodes can lie or behave arbitrarily, this is a **Byzantine fault**, making consensus much harder.
+- **Byzantine fault tolerance** (BFT) is crucial in environments like aerospace (where radiation may corrupt state) or multi-organization systems (where participants may cheat), and blockchains like Bitcoin use BFT to reach agreement without central authority.
+- In typical **DC** systems, Byzantine faults are **rare** (nodes are controlled, radiation is minimal), and BFT protocols are too complex and costly, so simpler fault-tolerance mechanisms suffice.
+- Web apps do face malicious clients, but the server enforces authority rather than using BFT.
+- BFT also cannot protect against **software bugs** shared across all nodes or against attackers who compromise multiple identical nodes. 
+- Traditional security measures (auth, encryption, firewalls, etc.) remain the main defense.
+
+#### Weak forms of lying
+
+- While nodes are generally assumed honest, systems can still benefit from lightweight safeguards against accidental “lying” caused by hardware faults, bugs, or misconfiguration.
+- These are not **full BFT** but simple, pragmatic reliability measures. Examples include:
+  - **Checksums** at the application level to catch rare undetected packet corruption.
+  - **Input validation** and sanity checks to prevent malformed data or denial-of-service risks.
+  - **Redundancy and cross-checking**, such as NTP clients using multiple servers and discarding outliers.
+- 👉 These mechanisms improve robustness against unintentional errors without the cost of full BFT.
+
+## System Model and Reality
+
+- Distributed algorithms must tolerate faults, so they are designed against system models that define assumptions about timing and node failures.
+- **Timing models**:
+  - **Synchronous**: assumes strict bounds on delays, pauses, and clock drift (unrealistic in practice).
+  - **Partially synchronous**: usually behaves synchronously but occasionally suffers unbounded delays (most realistic).
+  - **Asynchronous**: makes no timing assumptions and has no clocks (very restrictive).
+- **Failure models**:
+  - **Crash-stop**: nodes may fail permanently by stopping.
+  - **Crash-recovery**: nodes may fail and later return, with only persistent storage surviving.
+  - **Byzantine**: nodes can behave arbitrarily or maliciously.
+- 👉 In practice, the **partially synchronous + crash-recovery** model best reflects real-world distributed systems.
+
+### Correctness of an algorithm
+
+- Algorithm **correctness** is defined by **formal properties** that specify the desired behavior. For distributed algorithms, examples include:
+  - **Uniqueness**: no two fencing token requests return the same value.
+  - **Monotonic sequence**: later requests get higher token values than earlier ones.
+  - **Availability**: a non-crashed node eventually receives a response.
+- An algorithm is considered correct within a system model if it always satisfies these properties under the model’s assumptions. However, if all nodes crash or delays are infinite, no algorithm can make progress—showing correctness depends on the chosen system model.
+
+### Safety and liveness
+
+- Distributed algorithm properties fall into two categories:
+  - **Safety** properties: guarantee that “*nothing bad happens.*” If violated, the error occurs at a specific moment (e.g., duplicate fencing tokens). Once broken, they cannot be undone.
+  - **Liveness** properties: guarantee that “*something good eventually happens.*” They may not hold at a given time (e.g., a request awaiting response) but can still be satisfied in the future.
+- In practice, algorithms must ensure **safety always holds**, even under crashes or network failures, while **liveness** is **conditional** —i t may require assumptions like a majority of nodes remaining up or the network eventually recovering, as in the partially synchronous model.
+
+### Mapping system models to the real world
+
+- System models and safety/liveness properties are invaluable for reasoning about distributed algorithms, but they are **simplified abstractions of messy reality**.
+  - For example, the crash-recovery model assumes stable storage survives crashes, but in practice disks can be corrupted, misconfigured, or forgotten due to firmware bugs—breaking quorum guarantees.
+  - Real implementations must sometimes handle “impossible” situations (e.g., catastrophic storage loss), even if only by failing and requiring human intervention.
+- Despite these gaps, **theoretical models** are **crucial**: they simplify faults to make problems tractable, allow systematic reasoning, and enable proofs of correctness within the model.
+- While correctness proofs don’t guarantee flawless real-world behavior, they expose flaws that testing might miss. Ultimately, **theory** and **empirical testing** complement each other in building reliable distributed systems 🤓.
