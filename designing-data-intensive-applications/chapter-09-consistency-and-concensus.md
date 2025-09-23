@@ -139,3 +139,71 @@ A system can be:
   - Weaker consistency = much faster, better for latency-sensitive systems.
 
 ## Ordering Guarantees
+
+- Linearizability ensures operations appear to occur atomically in a **single global order**.
+- Ordering recurs in many contexts:
+  - **Leaders** in **replication logs** impose order on writes to avoid conflicts.
+  - **Serializability** ensures transactions act as if executed in sequential order.
+  - **Timestamps/clocks** help determine event order in distributed settings.
+- The link between **ordering** and **causality** is 🔑:
+  - **Causality** means causes must precede effects (question before answer, create before update, message sent before received).
+  - Violations of causality cause anomalies like:
+    - Reading answers before questions (prefix inconsistency).
+    - Updates to nonexistent rows due to overtaking writes.
+    - Non-repeatable reads that show effects without their causes.
+    - Write skew where decisions depend on outdated assumptions.
+    - Observing stale data even after effects are already visible elsewhere.
+- **Causal consistency** requires that if you see some data, you must also see all data that causally precedes it. For example, snapshot isolation guarantees causal consistency by ensuring snapshots reflect all causally prior operations.
+- 👉 Overall: Ordering is fundamental in distributed systems because it preserves causality, which underpins intuitive correctness (cause-before-effect).
+
+### The causal order is not a total order
+
+- **Total order**: Any two elements can always be compared (e.g., numbers).
+- **Partial order**: Some elements can be compared, others are incomparable (e.g., sets where neither is a subset of the other).
+- Applied to databases and consistency models:
+  - **Linearizability** = total order of operations.
+    - Every operation appears atomic.
+    - All operations fall on a single global timeline.
+    - No concurrency in the logical model: one operation always comes before the other.
+  - **Causality** = partial order of operations.
+    - Operations are ordered only if causally related (one depends on the other).
+    - Concurrent operations are incomparable (neither before the other).
+    - This results in branching timelines that later may merge, as seen in distributed systems.
+- Analogy: Distributed version control (e.g., `Git`).
+  - Linear history = total order.
+  - Branches and merges = partial order (causal graph of commits).
+- 👉 Key point: Linearizability enforces a single, strict timeline (total order), while causality reflects the reality of concurrency (partial order with branching and merging).
+
+### Linearizability is stronger than causal consistency
+
+- Linearizability ▶️ causality.
+- A linearizable system automatically preserves causal relationships, even across multiple communication channels.
+- 👍 of linearizability:
+  - Simple to reason about.
+  - Intuitive model (operations appear atomic in one timeline).
+- 👎 of linearizability:
+  - Hurts performance and availability, especially with high network latency or geo-distribution.
+- Middle ground:
+  - Causal consistency also preserves causality, but without the performance/availability penalties of linearizability.
+  - Strongest consistency model that is still tolerant of network delays/failures (not limited by CAP theorem).
+- Practical insight:
+  - Many systems don’t really need **full** linearizability— **causal** consistency is often enough.
+  - Research is exploring efficient databases that offer causal consistency with performance close to eventual consistency.
+- Current state:
+  - Still experimental and not widely in production.
+  - Promising direction, but with open challenges.
+- 👉 Key idea: Linearizability is sufficient but costly; causal consistency is often sufficient and much cheaper.
+
+### Capturing causal dependencies
+
+- To maintain causal consistency, a system must ensure that if one operation happened before another, replicas process them in that order. Concurrent operations can be applied in any order.
+- 🔑 ideas:
+  - A replica can only process an operation once all its causally preceding operations are applied; otherwise, it must wait.
+  - Determining causality requires tracking what a node “knew” when it issued an operation (similar to tracing dependencies).
+  - Techniques resemble detecting concurrent writes in leaderless datastores but extend across the entire database, not just one key.
+  - **Version vectors** (generalized) help track causal dependencies.
+  - Databases often need to know what version of data was read before a write—passing version info back ensures causal order is respected.
+  - Similar to SSI, the system checks if data read during a transaction is still current at commit time.
+- 👉 Essentially: causal consistency relies on tracking and enforcing the “happens-before” relationships across all data, often using version vectors and read-dependency tracking.
+
+### Sequence Number Ordering
