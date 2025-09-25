@@ -207,3 +207,53 @@ A system can be:
 - 👉 Essentially: causal consistency relies on tracking and enforcing the “happens-before” relationships across all data, often using version vectors and read-dependency tracking.
 
 ### Sequence Number Ordering
+
+Tracking all causal dependencies directly is impractical because clients often read lots of data before writing. Instead, sequence numbers or logical timestamps can efficiently order operations. These are compact, provide a total order of events, and can be made consistent with causality: if A happened before `B`, `A`’s number is lower. Concurrent operations can be ordered arbitrarily.
+
+In databases with single-leader replication, the leader’s log naturally provides this total order — each write gets a monotonically increasing sequence number. Followers that apply operations in log order remain causally consistent, even if they lag behind.
+
+#### Noncausal sequence number generators
+
+- In **multi-leader** or **leaderless** databases, generating sequence numbers is harder. Common approaches include:
+  - Per-node counters (e.g., odd/even, or embedding node IDs in the number).
+  - Physical clock timestamps (time-of-day).
+  - Preallocated blocks of sequence numbers per node.
+- These methods scale better than using a single leader, ensuring unique and roughly increasing numbers. However, none preserve **causal consistency**, since:
+  - Nodes may progress at different speeds (odd/even scheme).
+  - Physical clocks suffer from skew, misordering events.
+  - Block allocation may assign lower numbers to later operations.
+- 👉 In short: they provide uniqueness and scalability, but not causal ordering.
+
+#### Lamport timestamps
+
+- Lamport timestamps (1978) provide a **causality-consistent** way of generating sequence numbers.
+- Each node maintains a counter and pairs it with its node `ID → (counter, nodeID)`. Ordering works by comparing counters first, then node IDs if counters are equal.
+- The key idea: every node/client tracks the **maximum** counter value seen and includes it in requests. If a node sees a higher counter than its own, it **jumps forward**. This guarantees that causal dependencies always result in higher timestamps.
+- Unlike **version vectors**, Lamport timestamps cannot distinguish between **concurrency** and **dependency**, since they enforce a total order of all operations. Their advantage is **compactness**.
+
+#### Timestamp ordering is not sufficient
+
+- Lamport timestamps provide a **causality-consistent** total order, but they are not enough for problems like enforcing **uniqueness** constraints (e.g., usernames).
+- While you can resolve conflicts after the fact by comparing timestamps, you can’t decide safely in real time—because **other nodes** may **concurrently** create operations with earlier timestamps that you don’t yet know about 🤷.
+- Thus, Lamport timestamps only define order after **all operations are known**, but not when that order is finalized.
+- To guarantee correctness (e.g., safely declaring a username creation successful), you need not just ordering but also agreement on when the order is final — this is the role of **total order broadcast**.
+
+### Total Order Broadcast
+
+- On a **single CPU core**, operations have a clear total order, but in distributed systems achieving this is challenging.
+- Timestamp or sequence number ordering is **weaker** than single-leader replication, since it cannot enforce **uniqueness** under faults.
+- Single-leader replication enforces order by funneling all operations through one leader’s CPU, but this creates scalability and failover issues.
+- The distributed systems solution is **total order broadcast** (**atomic broadcast**), which ensures two guarantees:
+  - **Reliable delivery** – if one node delivers a message, all nodes do.
+  - **Totally ordered delivery** – all nodes see messages in the same order.
+- A correct algorithm must uphold these guarantees despite node or network faults, retrying until messages are successfully and consistently delivered.
+
+#### Using total order broadcast
+
+- Consensus systems like *ZooKeeper* and *etcd* implement total order broadcast, highlighting its close link to consensus.
+- It underpins several key use cases:
+  - **Database replication** (state machine replication): replicas stay consistent if they process the same writes in the same order.
+  - **Serializable transactions**: if each message is a deterministic stored procedure executed in the same order, partitions and replicas remain consistent.
+  - **Logs**: total order broadcast effectively creates a replication/transaction log, with all nodes appending and reading the same ordered messages.
+  - **Lock services** with **fencing** tokens: each lock request is appended to the log and assigned a monotonically increasing sequence number (e.g., ZooKeeper’s *zxid*), ensuring correct fencing.
+- A critical property is that once messages are delivered, their order is fixed — **no retroactive reordering** is allowed—making this approach stronger than timestamp ordering.
