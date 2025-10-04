@@ -45,13 +45,13 @@
 
 #### Linearizability Versus Serializability
 
-- TThe key difference between **linearizability** and **serializability** is often confused because both involve the idea of a **sequential order**. However, they are distinct guarantees:
-  - Serializability is an **isolation property** for **transactions** (groups of operations). It guarantees that the result of multiple concurrent transactions is equivalent to if they had executed one after another (in some serial order). It is about the correctness of a group of operations.
-  - Linearizability is a **recency guarantee** for a single object. It ensures that once a write completes, all subsequent reads will see that value until it is overwritten. It is about the freshness of a single operation.
-A system can be:
-  - Both: This combination is called **strict serializability**.
-  - Serializable but not linearizable: For example, databases using SSI use consistent snapshots, so reads may not see the very latest write.
-  - Linearizable but not serializable: A system can guarantee fresh reads on individual objects but not protect against multi-object transaction anomalies like **write skew**.
+- The key difference between **linearizability** and **serializability** is often confused because both involve the idea of a **sequential order**. However, they are distinct guarantees:
+  - **Serializability** is an **isolation property** for **transactions** (groups of operations). It guarantees that the result of multiple concurrent transactions is equivalent to if they had executed one after another (in some serial order). It is about the correctness of a group of operations.
+  - **Linearizability** is a **recency guarantee** for a single object. It ensures that once a write completes, all subsequent reads will see that value until it is overwritten. It is about the freshness of a single operation.
+- A system can be:
+  - **Both**: This combination is called **strict serializability**.
+  - **Serializable but not linearizable**: For example, databases using SSI use consistent snapshots, so reads may not see the very latest write.
+  - **Linearizable but not serializable**: A system can guarantee fresh reads on individual objects but not protect against multi-object transaction anomalies like **write skew**.
 - 👉 Serializability is about transactions appearing atomic; linearizability is about reads and writes appearing instantaneous.
 
 ### Relying on Linearizability
@@ -257,3 +257,26 @@ In databases with single-leader replication, the leader’s log naturally provid
   - **Logs**: total order broadcast effectively creates a replication/transaction log, with all nodes appending and reading the same ordered messages.
   - **Lock services** with **fencing** tokens: each lock request is appended to the log and assigned a monotonically increasing sequence number (e.g., ZooKeeper’s *zxid*), ensuring correct fencing.
 - A critical property is that once messages are delivered, their order is fixed — **no retroactive reordering** is allowed—making this approach stronger than timestamp ordering.
+
+#### Implementing linearizable storage using total order broadcast
+
+- Linearizability and total order broadcast (TOB) are closely related but distinct concepts.
+  - TOB guarantees that all messages are delivered reliably and in the **same order** to **all nodes**, but delivery timing is **not guaranteed** (it’s asynchronous).
+  - Linearizability guarantees that each read sees the most recent write — a stronger recency property.
+- You can build linearizable storage (e.g., enforcing unique usernames) on top of TOB by using it as an **append-only log**:
+  - Append a tentative claim.
+  - Wait until your message is delivered back.
+  - If your message is the first for that key, succeed; otherwise, abort.
+- Because all nodes receive messages in the same order, they agree on which operation “won.” This also enables serializable transactions.
+- However, this setup only guarantees **sequential consistency** (operations appear in the same order everywhere) — not **full linearizability for reads**.
+- To make reads linearizable, systems can:
+  - Route reads through the log (like `etcd` quorum reads),
+  - Use a sync mechanism to catch up to the latest log position (like *ZooKeeper’s* `sync()`), or
+  - Read from a synchronously updated replica (like chain replication).
+
+#### Implementing total order broadcast using linearizable storage
+
+- If you have a linearizable register supporting an atomic **increment-and-get** (or compare-and-set), you can assign each broadcast message a unique, consecutive sequence number. Nodes then deliver messages in order of these sequence numbers, ensuring total ordering.
+- Unlike **Lamport timestamps**, these sequence numbers have **no gaps**, so nodes can detect missing messages (e.g., if message 5 is missing between 4 and 6).
+- However, maintaining such a linearizable counter in a distributed system is hard — **failures** and **network partitions** make it complex to ensure correctness.
+- 👉 Linearizable registers, total order broadcast, and consensus are **equivalent problems** — solving one allows you to implement the others. This equivalence leads into the study of **consensus algorithms** in the next section.

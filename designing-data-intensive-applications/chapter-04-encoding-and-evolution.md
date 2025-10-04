@@ -103,3 +103,86 @@ issues, they also have some subtle problems:
   - **Missing Field**: If a field exists in the reader's schema but not in the writer's, it will be filled with the **default value** specified in the reader's schema.
 
 ### Schema evolution rules
+
+- **Forward compatibility**: New writer schema + old reader schema.
+- **Backward compatibility**: Old writer schema + new reader schema.
+- Rules for compatibility:
+  - You can only **add** or **remove** fields with **default values**.
+  - If a field with a default is missing, the default is used.
+  - Adding/removing a field without a default breaks compatibility.
+- Null handling:
+  - Fields are not nullable by default.
+  - To allow `null`, use a union type (e.g., {null, string}).
+  - Null can only be a default if included in the union.
+- Differences from Protocol Buffers/Thrift:
+  - No “**optional**/**required”** markers.
+  - Uses union types + defaults instead.
+- Schema evolution:
+  - Changing field datatype: allowed if **convertible**.
+  - Renaming a field: possible with aliases, but only backward compatible.
+  - Adding a union branch: backward compatible, not forward compatible.
+
+### But what is the writer’s schema?
+
+- Avro avoids including the full schema with every record (to save space). Instead, how the reader learns the writer’s schema depends on context:
+  - **Large files** (e.g., `Hadoop`): Writer’s schema is stored **once** at the **start of the file** (Avro object container format).
+  - **Databases with varying schemas**: Each record includes a version number; the database stores all schema versions so readers can fetch the correct schema.
+  - **Network communication**: Schemas are negotiated when the connection is established and reused for the session (e.g., Avro RPC).
+- In general, keeping a schema version database is useful for documentation and compatibility checks. Version numbers can be simple integers or schema hashes.
+
+### Dynamically generated schemas
+
+- Avro **doesn’t use tag numbers** in schemas (unlike Protocol Buffers and Thrift). This makes it much easier to **generate schemas dynamically**, such as exporting relational database tables:
+  - Each table → Avro record schema.
+  - Each column → Avro field (identified by name).
+  - If the DB schema changes (add/remove columns), you can regenerate the Avro schema automatically. Readers match fields by name, so compatibility is preserved.
+- With Thrift/Protobuf, field tags must be assigned and carefully managed, making automated schema generation more difficult. Avro was explicitly designed for this use case; the others were not.
+
+### Code generation and dynamically typed languages
+
+- **Thrift/Protobuf**: Depend on code generation after defining a schema.
+  - Great for **statically typed languages** (Java, C++, C#) → efficient data structures, compile-time type safety, IDE support.
+  - Less useful for dynamically typed languages (Python, Ruby, JavaScript), where code generation adds friction.
+- **Avro**:
+  - Code generation is **optional**.
+  - Works seamlessly without it because **Avro files are self-describing** (they embed the writer’s schema).
+  - This makes it especially useful for dynamic or ad-hoc data processing (e.g., Apache Pig), where you can open Avro files and analyze/write them like JSON, without managing schema code.
+- 👉 Key difference: Avro avoids making codegen a barrier, while Thrift/Protobuf depend on it for practical use in most cases.
+
+### The Merits of Schemas
+
+- Protobuf, Thrift, and Avro:
+  - Use **schemas** for binary encoding, but keep schema languages simple compared to XML/JSON Schema.
+  - Support many programming languages.
+- Historical context:
+  - Similar ideas existed in `ASN.1` (1984), still used in SSL certificates.
+  - ASN.1 also had schema evolution via tag numbers but was overly **complex** and **poorly documented**.
+  - Many databases use their own proprietary binary protocols for queries/responses.
+- Advantages of schema-based binary formats:
+  - More **compact** than textual formats (don’t need field names).
+  - Schema doubles as documentation and guarantees alignment between encoding and decoding.
+  - A **schema registry** allows checking **forward/backward compatibility** before deployment.
+  - Code generation supports **compile-time** type safety in statically typed languages.
+- 👉 Schema-based binary encoding combines the flexibility of schemaless JSON with stronger data guarantees and tooling.
+
+## Modes of Dataflow
+
+- Data exchanged between processes that **don’t share memory** must be encoded into bytes.
+- Encoding/decoding must support forward and backward compatibility to allow system evolution without synchronized upgrades.
+- Compatibility: Defined between the writer (encoder) and reader (decoder) of data.
+- Next topics: Common dataflow scenarios where this matters:
+  - Databases (persistent storage)
+  - Service calls (REST, RPC)
+  - Asynchronous message passing (messaging systems).
+
+### Dataflow Through Databases
+
+- Writer encodes `data → database → reader` decodes data.
+- Even a single process can act as writer/reader across time (sending data to your “future self”).
+- Compatibility needs:
+  - Backward compatibility: required so newer code can still read old data.
+  - Forward compatibility: also needed, since old code may read data written by newer code (e.g., during **rolling upgrades**).
+- Challenge:
+  - If newer code adds a field, older code may overwrite records without preserving the unknown field.
+  - Good encoding formats can preserve unknown fields, but apps must also handle this carefully (otherwise unknown fields may be lost when mapping to objects and re-encoding).
+- 👉 Databases require both forward and backward compatibility, plus care to preserve unknown fields during schema evolution.
