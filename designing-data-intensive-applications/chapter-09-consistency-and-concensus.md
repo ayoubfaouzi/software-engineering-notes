@@ -280,3 +280,108 @@ In databases with single-leader replication, the leader’s log naturally provid
 - Unlike **Lamport timestamps**, these sequence numbers have **no gaps**, so nodes can detect missing messages (e.g., if message 5 is missing between 4 and 6).
 - However, maintaining such a linearizable counter in a distributed system is hard — **failures** and **network partitions** make it complex to ensure correctness.
 - 👉 Linearizable registers, total order broadcast, and consensus are **equivalent problems** — solving one allows you to implement the others. This equivalence leads into the study of **consensus algorithms** in the next section.
+
+## Distributed Transactions and Consensus
+
+- Consensus - getting multiple nodes in a distributed system to agree on a single decision - is one of the most fundamental yet difficult problems in distributed computing.
+- Although it sounds simple, many systems have failed because the problem was **underestimated** 🤷‍♀️. Understanding consensus requires knowledge of topics like replication, transactions, system models, and linearizability.
+- Consensus is crucial in scenarios such as:
+  - **Leader election**: ensuring all nodes agree on one leader to prevent split-brain situations.
+  - **Atomic commit**: ensuring all nodes in a distributed transaction either commit or abort together to preserve atomicity.
+
+### Atomic Commit and Two-Phase Commit (2PC)
+
+- Transaction atomicity ensures that when a transaction involves multiple writes, the system produces a clear, **all-or-nothing** outcome:
+  - **Commit**: all writes are successfully applied and made **durable**.
+  - **Abort**: all writes are rolled back, leaving **no partial changes**.
+- This guarantees that failed transactions don’t leave the database in an **inconsistent** or **half-updated** state. Atomicity is particularly crucial for multi-object transactions and systems with secondary indexes, ensuring those **indexes** remain **consistent** with the **primary data**.
+
+#### From single-node to distributed atomic commit
+
+- For **single-node** transactions, atomicity is handled by the storage engine using a WAL:
+  - The node writes all transaction data to disk, then appends a commit record.
+  - If a crash occurs before the commit record is written, the transaction aborts; if after, it’s committed.
+  - Thus, the moment the commit record is safely written defines the **commit point** — the decision is made by one disk controller on one node.
+- For **multi-node** transactions, things are more complex:
+  - Simply sending commit requests to all nodes can lead to inconsistency — some nodes might commit while others abort due to failures, network loss, or conflicts.
+  - Once a node commits, it cannot later abort, since other transactions may already depend on that data.
+  - ▶️ Therefore, a node must only commit when it’s certain **all participants will commit**, ensuring atomicity across the system.
+- Undoing a committed transaction can only be done via a separate compensating transaction, not by retroactive rollback.
+
+#### Introduction to two-phase commit
+
+- Two-Phase Commit (2PC) is a distributed algorithm that ensures **atomic commits** across **multiple nodes** — meaning either all nodes commit or all abort.
+- It introduces a **coordinator** (transaction manager) that orchestrates the process among participants (the database nodes). The protocol has two phases.
+- Phase 1️⃣ — Prepare:
+  - The coordinator asks each participant if it can commit.
+  - Each node responds “yes” (ready) or “no” (cannot commit).
+- Phase 2️⃣ — Commit or Abort:
+  - If all reply “yes,” the coordinator sends a commit command.
+  - If any reply “no,” it sends an abort command to all.
+- The process ensures consistency but introduces dependency on the coordinator.
+<p align="center"><img src="assets/2-phase-commit.png" width="450px" height="auto"></p>
+
+#### A system of promises
+
+- 2PC guarantees atomicity across multiple nodes by introducing **two irreversible commitment points** — one for **participants** and one for the **coordinator**.
+- Here’s how it ensures atomicity:
+  - The coordinator assigns a **global transaction ID** and manages the process.
+  - Each participant runs a local transaction tagged with that ID.
+  - When ready to commit, the coordinator sends a prepare request to all participants.
+  - Each participant ensures it can commit under all circumstances (**writing all data to disk**, **verifying constraints**) before replying “yes.” Saying “yes” means it cannot abort later, even after crashes ❗
+  - Once all votes are in, the coordinator makes a final decision (commit or abort), writes it to disk — the commit point — and then sends the final command to all participants.
+  - The coordinator **must retry commit/abort** messages **indefinitely** until all nodes acknowledge.
+- Atomicity is preserved because:
+  - Participants promise to commit once they vote “yes.”
+  - The coordinator’s decision is final once recorded.
+- In short:
+  - Saying “yes” (prepare phase) = can no longer abort.
+  - Coordinator deciding “commit” = can no longer change its mind.
+
+#### Coordinator failure
+
+- In 2PC, if a participant or the network fails, recovery is straightforward through retries or aborts.
+- However, if the **coordinator crashes**, the system can enter an uncertain state:
+  - Once a participant votes “yes” (in the prepare phase), it cannot unilaterally abort — it **must wait** for the coordinator’s final decision.
+  - If the coordinator crashes before sending the final commit/abort message, participants that already voted “yes” become **in doubt** (uncertain whether to commit or abort).
+  - **Acting independently** (e.g., aborting after a timeout) r**isks data inconsistency**, since some participants may have already committed.
+- To recover safely, the coordinator must log its decision (commit or abort) to durable storage before notifying participants.
+- When it restarts, it reads this log to resolve all in-doubt transactions:
+  - Transactions with a commit record → commit.
+  - Transactions without one → abort.
+- ▶️ The commit point of 2PC effectively depends on a **single-node** atomic commit at the coordinator 🫤.
+
+#### Three-phase commit
+
+- 2PC is known as a **blocking** atomic commit protocol because it can get stuck waiting for the coordinator to recover after a failure.
+- While **nonblocking alternatives** exist — such as **three-phase commit** (3PC) — they rely on unrealistic assumptions like **bounded network delay** and **guaranteed response times**.
+- In real-world distributed systems, where delays and pauses are unbounded, these assumptions don’t hold, and 3PC cannot ensure atomicity.
+- In theory, nonblocking commit requires a **perfect failure detector** (a mechanism that can always tell whether a node has truly failed), but such a detector is impossible to build in unreliable networks 🤷‍♂️.
+- Therefore, despite its blocking limitation, 2PC remains the **standard** in practice because it’s the most reliable option under realistic network conditions.
+
+### Distributed Transactions in Practice
+
+- There is a mixed reputation of distributed transactions, particularly those using 2PC:
+  - 👍 They offer **strong safety** guarantees that are otherwise difficult to achieve.
+  - 👎 They often cause **operational complexity**, **poor performance**, and **overpromised reliability**. Many cloud systems avoid them due to these issues 🤷.
+- For example, *MySQL*’s distributed transactions can be `10×` slower than single-node ones, mainly because of extra disk syncs (`fsync`) for crash recovery and network round-trips.
+- We can distinguish two types of distributed transactions:
+  - **Database-internal** transactions:
+    - Occur between nodes of the **same distributed database** (e.g., VoltDB, MySQL Cluster NDB).
+    - Use a common protocol and can be optimized for that system — often **work reasonably well**.
+  - **Heterogeneous** distributed transactions:
+    - Span across different systems or technologies (e.g., different databases, message brokers).
+    - Must ensure atomic commit across incompatible systems — much harder to implement reliably.
+- 👉 Don’t dismiss distributed transactions entirely — study them carefully to understand their trade-offs and lessons.
+
+#### Exactly-once message processing
+
+- Heterogeneous distributed transactions enable atomic coordination across **different systems** — for example, ensuring that a **message acknowledgment** and a **database update** either both succeed or both fail.
+- This allows powerful guarantees such as **exactly-once** message processing:
+  - If the database write or message acknowledgment fails, the whole transaction aborts, and the message can be safely retried.
+  - All side effects of a failed transaction are rolled back, ensuring consistency.
+- However, this only works if all participating systems support the **same atomic commit protocol** (e.g., two-phase commit).
+- If one system (like an email server) doesn’t, it can cause inconsistencies such as duplicate emails on retries.
+- 👉 Heterogeneous distributed transactions make strong atomic guarantees across systems — but only when every participant supports coordinated commit semantics.
+
+#### XA transactions
