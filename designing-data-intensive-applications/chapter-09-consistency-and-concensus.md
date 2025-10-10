@@ -480,3 +480,22 @@ In databases with single-leader replication, the leader’s log naturally provid
 - Only the atomic operations strictly require consensus, but together these features make ZooKeeper and etcd indispensable tools for distributed coordination and cluster management, not for storing large-scale application data.
 
 #### Allocating work to nodes
+
+- ZooKeeper/Chubby is effective for coordination tasks in distributed systems:
+  - **Leader election**: Choosing a primary node among several instances, useful for single-leader databases or job schedulers.
+  - **Partition assignment and rebalancing**: Deciding which node handles which partition of a resource, and redistributing partitions as nodes join or fail.
+- These tasks leverage **atomic** operations, **ephemeral** nodes, and **notifications** to enable **automatic fault recovery** without human intervention. Libraries like Apache Curator simplify using ZooKeeper, but implementing consensus from scratch is much harder.
+- ZooKeeper runs on a **small, fixed cluster** (usually 3–5 nodes) to perform majority votes efficiently, while supporting a large number of clients, effectively outsourcing consensus, operation ordering, and failure detection.
+- It manages **slow-changing metadata**, such as leadership and partition assignments, rather than fast-changing application state, which requires other tools like Apache BookKeeper for replication.
+
+#### Service discovery
+
+- **ZooKeeper**, **etcd**, and **Consul** are commonly used for **service discovery**, helping services find the correct IP addresses in **dynamic cloud environments** where VMs frequently change. Services register their endpoints in a service registry so others can locate them.
+- However, service discovery itself **does not require consensus** — traditional DNS, which is eventually consistent and allows stale reads, is often sufficient. Consensus is **only needed for leader election**, ensuring a single authoritative leader.
+- To improve efficiency, some consensus systems offer **read-only caching replicas** that asynchronously replicate the decision log. These replicas can serve **non-linearizable read requests** (like service discovery) without participating in **votes**, reducing load on the consensus cluster.
+
+#### Membership services
+
+- ZooKeeper and similar systems are part of a long tradition of membership services, which track which nodes are active in a cluster — critical for building reliable distributed systems.
+- Because network delays are unbounded, nodes cannot reliably detect failures on their own. By combining failure detection with consensus, nodes can agree on the **current membership**, even if some nodes are mistakenly declared dead 🫤.
+- Having a **consistent view of membership** is essential for operations like leader election, since divergent views across nodes would prevent coordinated decisions.
