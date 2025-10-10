@@ -385,3 +385,98 @@ In databases with single-leader replication, the leader’s log naturally provid
 - 👉 Heterogeneous distributed transactions make strong atomic guarantees across systems — but only when every participant supports coordinated commit semantics.
 
 #### XA transactions
+
+- X/Open XA (eXtended Architecture) is a 1991 **standard** defining how to implement 2PC across heterogeneous systems like databases and message brokers. It’s not a network protocol, but a `C` API that allows a transaction coordinator to manage distributed transactions through **drivers** or **client libraries**.
+- Many systems support XA (e.g., PostgreSQL, MySQL, Oracle, ActiveMQ, IBM MQ). In Java EE, it’s used via JTA with JDBC and JMS drivers.
+- When a driver supports XA, it coordinates with the transaction manager to include operations in distributed transactions and exposes **callbacks** for prepare, commit, and abort.
+- The coordinator itself is usually a **library** inside the **app process**, maintaining a **local log** of transaction states. If the application or machine crashes, participants in the transaction may be left in doubt until the coordinator recovers its state from the log upon restart. Communication with participants always goes through their client libraries, not directly to the coordinator.
+
+#### Holding locks while in doubt
+
+- An **in-doubt** transaction is a serious problem because of locking.
+- Databases hold **exclusive locks** on **modified rows** (and sometimes shared locks on read rows for serializable isolation) until the transaction’s outcome is known. If the coordinator crashes, those locks remain held — potentially for minutes or indefinitely if the coordinator’s log is lost 🤷.
+- While locks are held, other transactions cannot modify (and sometimes even read) the affected rows, causing blocking and possibly making large parts of the application unavailable until the issue is manually resolved.
+
+#### Recovering from coordinator failure
+
+- Although a restarted transaction coordinator should recover in-doubt transactions from its log, in practice orphaned in-doubt transactions often occur due to issues like **lost or corrupted logs**. These transactions remain unresolved indefinitely, holding locks and blocking others, even after database restarts — since releasing them prematurely would break atomicity.
+- The only remedy is **manual intervention**, where an administrator inspects each participant’s state and decides whether to commit or roll back, often under high stress during outages.
+- Some XA implementations offer **heuristic decisions**, allowing a participant to unilaterally commit or abort to unblock the system - but this breaks atomicity guarantees and is meant only as a last-resort recovery option, not normal operation.
+
+#### Limitations of distributed transactions
+
+- XA transactions ensure consistency across multiple systems but introduce serious **operational** and **reliability issues**. 
+- The transaction coordinator functions like a database, storing transaction outcomes, and thus becomes a critical component requiring **durability** and **availability**.
+- 🔑 problems include:
+  - **SPOF**: If the coordinator isn’t replicated, its crash can block entire systems due to in-doubt transactions.
+  - **Loss of statelessness**: Applications that embed the coordinator lose their stateless nature since coordinator logs become essential for recovery.
+  - **Limited functionality**: XA is a lowest common denominator - it can’t detect cross-system deadlocks or support advanced isolation levels like SSI.
+  - **Failure amplification**: Since two-phase commit requires all participants to respond, any system failure can cause the entire transaction to fail.
+- Although XA has major drawbacks, there are alternative approaches to maintain cross-system consistency without these complications.
+
+### Fault-Tolerant Consensus
+
+- **Consensus** is the process of getting multiple nodes to **agree on a single value or decision**, even in the presence of **failures** 👌. For example, it can decide which user successfully books the last seat on a flight.
+- Formally, a consensus algorithm must satisfy four properties:
+  - **Uniform agreement**: All nodes reach the same decision.
+  - **Integrity**: No node decides more than once.
+  - **Validity**: The decided value must have been proposed by a node.
+  - **Termination**: Every non-faulty node eventually reaches a decision.
+- The first three ensure **safety** (consistency), while termination ensures **liveness** (progress). Without fault tolerance, consensus is easy—one node can act as a dictator - but if that node fails, decisions halt. This is similar to the 2PC problem, where a failed coordinator blocks progress.
+- Termination requires that the system **continue making decisions** even if **some nodes fail**. However, consensus is only possible if a **majority of nodes** remain functioning (forming a **quorum**). If most nodes fail, progress stops — but the system still won’t make incorrect or conflicting decisions ❗.
+- Most consensus systems assume **non-Byzantine faults** (nodes crash but don’t act maliciously). Algorithms that tolerate Byzantine faults exist but require that fewer than one-third of nodes behave incorrectly.
+
+#### Consensus algorithms and total order broadcast
+
+- The most widely used fault-tolerant consensus algorithms include *Viewstamped Replication* (VSR), *Paxos*, *Raft*, and *Zab*.
+- While they share many core ideas, they differ in details and complexity - implementing them correctly is notoriously difficult.
+- Rather than deciding on a single value, these algorithms decide on a **sequence of values**, effectively implementing **total order broadcast**, where all nodes deliver the same messages **exactly once** and in the **same order**.
+- Total order broadcast can be seen as performing **multiple rounds of consensus**, one per message.
+  - Agreement ensures all nodes deliver the same messages in the same order.
+  - Integrity prevents duplicates.
+  - Validity ensures only real, proposed messages are delivered.
+  - Termination guarantees messages are eventually delivered.
+- Algorithms like **Raft**, **Zab**, and **VSR** directly implement total order broadcast for **efficiency**, while **Paxos** achieves the same through an optimized form called **Multi-Paxos**.
+
+#### Single-leader replication and consensus
+
+- Single-leader replication resembles total order broadcast, but it avoids consensus only because the leader is chosen **manually** - essentially a “dictator” model. This approach works but lacks the **termination** property of consensus, since it needs human intervention after failures.
+- When systems add automatic leader election for failover, they approach fault-tolerant total order broadcast — but this introduces the **split-brain** problem, where multiple nodes might think they are leader. To avoid inconsistency, all nodes must agree on who the leader is, which requires consensus.
+- This creates a **paradox**: to elect a leader, we need consensus — but to run consensus (or total order broadcast), we already need a leader. The question is how to bootstrap consensus without having one in the first place 🤷‍♀️.
+
+#### Epoch numbering and quorums
+
+- Consensus algorithms like Paxos, Raft, and Viewstamped Replication all use a **leader-based approach**, but they guarantee a unique leader only within an **epoch** (also called a *ballot*, *term*, or *view*). Each time a leader is suspected dead, nodes hold an election with a higher epoch number. Epochs are totally ordered, and if **conflicting leaders exist**, the one with the **higher epoch number prevails**.
+- Before making decisions, a leader must ensure it hasn’t been replaced by collecting votes from a quorum (typically a majority). A node votes for a **proposal only** if it hasn’t seen a higher epoch.
+- Consensus thus involves 2️⃣ voting rounds:
+  - **Leader election** (to choose a leader for a new epoch).
+  - **Proposal agreement** (leader proposes a value and gets quorum approval).
+- The overlap between these quorums ensures **continuity** - if a proposal passes, at least one node that voted also participated in the latest leader election, preventing conflicts between epochs.
+- Although this resembles 2PC, key differences are that:
+  - The coordinator (leader) in consensus is elected **dynamically**,
+  - Consensus requires only a **majority quorum**, not unanimous agreement, and
+  - Consensus includes **recovery mechanisms** to maintain safety after failures - making it **fault-tolerant**, unlike 2PC.
+
+#### Limitations of consensus
+
+- Consensus algorithms are a major advance in distributed systems, ensuring strong safety properties — agreement, integrity, and validity —while remaining fault-tolerant as long as a majority of nodes are reachable. They enable total order broadcast and thus can provide linearizable, atomic operations across nodes.
+- However, these guarantees come with significant ⚖️":
+  - Consensus involves **synchronous replication**, reducing **performance** compared to asynchronous replication (which risks data loss on failover).
+  - A **strict majority** is required to operate (e.g., 3 nodes to tolerate 1 failure, 5 to tolerate 2), meaning any network partition that breaks majority halts progress.
+  - Most algorithms assume a **fixed cluster membership**, making node additions/removals complex and less understood.
+  - **Timeout-based failure detection** can cause **false leader elections** under variable network latency, hurting **performance**.
+- In **unreliable networks**, algorithms like *Raft* can enter **unstable states** - leadership constantly flipping - causing the system to stall indefinitely.
+- 👉 Overall, while consensus brings reliability and correctness, it is complex, slower, and fragile under network instability, and improving its robustness remains an active research challenge.
+
+### Membership and Coordination Services
+
+- **ZooKeeper** and **etcd** are not general-purpose databases, but **coordination services** built **on top of consensus algorithms** to provide strong consistency guarantees for small, critical data.
+- They store only small, in-memory datasets replicated across nodes via **fault-tolerant total order broadcast**, ensuring all replicas apply **updates** in the **same order**. This consistency is essential for coordination tasks rather than data storage.
+- Their main features include:
+  - **Linearizable atomic operations** (e.g., CAS) — used to build distributed locks and leader elections safely.
+  - **Total ordering of operations** — ensures unique, monotonically increasing IDs (*zxid*, *cversion*) for fencing tokens to avoid conflicts.
+  - **Failure detection** — via session heartbeats and automatic cleanup of ephemeral nodes when clients die.
+  - **Change notifications** — clients can watch keys and react to cluster changes without polling.
+- Only the atomic operations strictly require consensus, but together these features make ZooKeeper and etcd indispensable tools for distributed coordination and cluster management, not for storing large-scale application data.
+
+#### Allocating work to nodes
