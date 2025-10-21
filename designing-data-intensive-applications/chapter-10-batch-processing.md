@@ -70,7 +70,7 @@ While it’s less concise than the Unix pipeline, the Ruby version is **easier t
 
 - Unix programs interoperate so well because they all share a simple, uniform interface — the **file descriptor**, which represents an ordered sequence of bytes. This abstraction allows diverse things (**files**, **devices**, **sockets**, **pipes**) to communicate seamlessly.
 - Most Unix tools conventionally treat this byte stream as ASCII text, typically organized as lines separated by `\n` and fields split by whitespace. This shared convention enables tools like `awk`, `sort`, `uniq`, and `head` to work together easily, even if the text-based interface **isn’t elegant** or **strongly** structured.
--👉 While this simplicity sacrifices **readability** and **rich data semantics**, it provides extraordinary **composability**: Unix programs can be chained together flexibly — something rare in modern software ecosystems, where systems are often fragmented and data exchange between them is difficult.
+- 👉 While this simplicity sacrifices **readability** and **rich data semantics**, it provides extraordinary **composability**: Unix programs can be chained together flexibly — something rare in modern software ecosystems, where systems are often fragmented and data exchange between them is difficult.
 
 #### Separation of logic and wiring
 
@@ -89,3 +89,56 @@ While it’s less concise than the Unix pipeline, the Ruby version is **easier t
 - Their main limitation, however, is that they operate on a **single machine**, which is where **distributed** systems like `Hadoop` extend the model.
 
 ## MapReduce and Distributed Filesystems
+
+- Instead of stdin/stdout, MapReduce reads and writes to a distributed **filesystem**, typically **HDFS** (*Hadoop Distributed File System*) —an open-source version of *Google*’s **GFS**. Other similar systems include **GlusterFS**, **QFS**, and object stores like `Amazon S3` or `Azure Blob Storage`.
+- HDFS follows a **shared-nothing** architecture, using **commodity** servers rather than specialized hardware. Each machine runs a **daemon** that manages its local disks, while a central **NameNode** tracks block locations.
+- Files are replicated across machines (via multiple copies or erasure coding like **Reed–Solomon**) to tolerate failures — similar in concept to RAID but distributed over a network.
+- This design allows HDFS to scale to tens of thousands of machines and hundreds of **petabytes**, offering massive, fault-tolerant storage at a fraction of the cost of traditional centralized storage systems.
+
+### MapReduce Job Execution
+
+- **MapReduce** is a programming **framework** for **processing large datasets** stored in **distributed filesystems** like HDFS, following a pattern similar to Unix-style log analysis pipelines.
+0 It works in four main steps:
+  - Read and parse input files into records (e.g., each log line).
+  - **Map phase**: the mapper function extracts **key-value pairs** from each record (e.g., URL as key).
+  - **Sort phase**: all key-value pairs are **automatically sorted** by **key**.
+  - **Reduce phase**: the reducer function processes all values for each key (e.g., counting URL occurrences).
+- You implement two callbacks:
+  - **Mapper**: statelessly converts each input record into zero or more key-value pairs.
+  - **Reducer**: receives all values for a key, **aggregates** or **transforms** them, and outputs results.
+- If another sorting or aggregation is needed, you simply chain multiple MapReduce jobs, feeding the output of one as the input to the next.
+- 👉 In essence, MapReduce **automates** distributed data **shuffling** and **sorting** so developers only need to define how to map and reduce data.
+
+#### Distributed execution of MapReduce
+
+- **MapReduce** differs from **Unix pipelines** in that it **automatically parallelizes** computation across many machines, without requiring the developer to manage data movement or concurrency.
+- Each **mapper** and **reducer** processes **one record** at a time, while the framework handles distributing data, transferring intermediate results, and managing failures.
+- In `Hadoop`, mappers and reducers are typically **Java classes**, while in systems like `MongoDB` or `CouchDB` they can be **JS** functions. The input dataset (usually in HDFS) is split into large file blocks, and each block is processed by a separate map task.
+- The scheduler tries to run each map task on the same machine that stores the data, improving performance through **data locality**.
+- Before execution, MapReduce distributes the job code (like JARs) to all relevant machines. Each mapper produces **KV pairs**, which are then partitioned by a **hash** of the **key** to route data to the correct reducer.
+- The system performs a **multi-stage sort**: each mapper writes locally sorted files per reducer, and reducers fetch and **merge these sorted partitions** in a process called the *shuffle*.
+- Finally, reducers process all values for each key sequentially and write their outputs back to the distributed filesystem, typically stored **locally** and **replicated** across nodes.
+<p align="center"><img src="assets/map-reduce-job.png" width="450px" height="auto"></p>
+
+#### MapReduce workflows
+
+- A **single MapReduce job** can only handle **limited** tasks — like counting page views per URL—but not more complex ones, such as finding the most popular URLs, which require multiple processing stages.
+- To perform multi-step operations, MapReduce jobs are **chained into workflows**, where the output of one job becomes the input of the next. `Hadoop` doesn’t natively support workflows, so this chaining is done through **HDFS** directories: one job writes to a directory, and the next reads from it.
+- Unlike Unix pipelines (which stream data directly), MapReduce workflows materialize intermediate results to **disk**, which has pros and cons. Since a job’s output is only valid after it finishes successfully, dependent jobs must wait for the previous ones to complete.
+- To manage these dependencies and complex workflows, workflow schedulers like `Oozie`, `Azkaban`, `Luigi`, `Airflow`, and `Pinball` are used. These tools help coordinate large pipelines—sometimes with 50–100 MapReduce jobs—common in big systems like recommendation engines.
+- Additionally, higher-level tools such as `Pig`, `Hive`, `Cascading`, `Crunch`, and `FlumeJava` simplify this process by automatically generating and linking multiple MapReduce stages into complete workflows.
+
+### Reduce-Side Joins and Grouping
+
+- In **databases**, **joins** on small datasets are efficient because they use **indexes** to quickly find matching records. However, **MapReduce** has no indexes — it processes all input files completely, performing a **full scan** instead of selective lookups.
+- Though this would be inefficient for small queries, it’s acceptable for **analytic workloads** that aggregate data across many records, especially when the work is parallelized across multiple machines.
+- In **batch processing**, a *join* means *resolving all relationships* across an entire dataset (e.g., joining data for all users), not just performing a lookup for a single record.
+- Let's look at an example at how joins are performed in batch processing systems like MapReduce: joining user activity logs with user profile data.
+  - The activity log (fact table) records user actions on a website, while the user database (dimension table) contains profile details like age or birthdate.
+  - To analyze behavior by demographics (e.g., page popularity by age group), the two datasets must be joined on the user ID.
+  - A naive approach — querying the remote user database for each event— would be slow and inefficient, due to network latency, caching limits, and potential database overload.
+  - Instead, for high throughput, all data should be **local** to the computation. The recommended method is to **extract a static copy** of the user database (via an ETL or backup process), place it in the **same distributed** FS (e.g., HDFS) as the activity logs, and then perform the join within MapReduce.
+- 👉 This approach ensures deterministic, parallel, and efficient processing without depending on **live remote queries**.
+<p align="center"><img src="assets/map-reduce-join-example.png" width="450px" height="auto"></p>
+
+##### Sort-merge joins
