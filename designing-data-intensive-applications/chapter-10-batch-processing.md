@@ -326,3 +326,57 @@ Beyond joins, MapReduce’s “bring related data to the same place” pattern i
 - In open-source clusters (`YARN`, `Mesos`, `Kubernetes`), such preemption is rarer — making some `MapReduce` trade-offs less relevant today.
 
 ## Beyond MapReduce
+
+- MapReduce became famous in the late `2000s` because it offered a simple and understandable abstraction for distributed data processing — a good learning model built atop distributed filesystems.
+- However, it’s not easy to use:
+  - Writing complex jobs with raw `MapReduce` **APIs** is **tedious** and **low-level**; developers must manually implement things like joins and data flow management.
+  - Higher-level tools emerged to simplify it — such as `Pig`, `Hive`, `Cascading`, and `Crunch` — which **abstract** away boilerplate while retaining `MapReduce’s` core ideas.
+- But `MapReduce’s` execution model has inherent limits:
+  - It’s robust and fault-tolerant, capable of handling massive data on unreliable clusters.
+  - Yet, it can be slow and inefficient for certain types of processing — especially iterative or low-latency tasks.
+
+### Materialization of Intermediate State
+
+- There are ⚖️ in how MapReduce **workflows** handle data exchange between jobs:
+  - **Independence of jobs**:
+    - Each MapReduce **job** runs **independently**. Its only interaction with other jobs is through input and output directories on the distributed filesystem.
+    - If one job’s output should feed another, you configure the next job to read from that output path.
+    - A workflow scheduler (like `Oozie` or `Airflow`) ensures jobs run in the right **order**.
+- When this design works well:
+  - Publishing job outputs to shared filesystem locations allows **loose coupling** — multiple teams can reuse common datasets without direct **coordination**.
+- But often, intermediate data is temporary:
+  - Many pipelines (e.g., large recommendation systems with 50–100 MapReduce jobs) use job outputs purely as intermediate state, just to pass data from one step to the next.
+  - This process of **writing intermediate results** to disk is called **materialization** — computing and saving results eagerly instead of on demand.
+- Fully writing intermediate data to disk has downsides:
+  - Jobs **can’t start** until all preceding tasks **finish** (delays due to stragglers).
+  - Some mapper stages are **redundant** — they just re-read reducers’ output, which could be avoided by **chaining reducers directly**.
+  - Storing temporary data in a replicated distributed filesystem is wasteful and slow for **short-lived** data.
+
+#### Dataflow engines
+
+- Dataflow engines such as `Spark`, `Tez`, and `Flink` were developed to overcome `MapReduce’s` inefficiencies. Instead of treating each job as independent, they execute an **entire workflow** as a **single job**, explicitly modeling the flow of data between processing stages — hence the term dataflow engines.
+- They still process data **record-by-record** using user-defined functions (called **operators**) but offer more flexible ways to connect these operators than the rigid map/reduce pattern. Operators can be connected through repartitioning and sorting, partitioned joins, or broadcast joins, depending on the computation.
+- Key advantages over `MapReduce`:
+  - **Sorting** and other **expensive** operations happen **only when necessary**.
+  - **No redundant map tasks**, since **mapping** logic can often be **merged** with the previous **reduce** operator.
+  - The scheduler has a global view of data dependencies, enabling **locality optimization** (placing producer and consumer tasks on the same machine).
+  - Intermediate state can stay in **memory** or **local disk** instead of **replicated HDFS**, reducing I/O overhead.
+  - Operators **start** as soon as their **input** is **ready**, enabling **pipelined** execution.
+  - JVM reuse lowers startup overhead compared to launching a new JVM per task.
+
+#### Fault tolerance
+
+- `Spark`, `Flink`, and `Tez` avoid writing intermediate results to disk for performance, so they handle faults by **recomputing lost** data from earlier stages or from the original input. To support this, they track how data was produced (its lineage):
+  - `Spark` uses **RDDs** to record data ancestry.
+  - `Flink` uses **checkpoints** to capture operator state and resume after failure.
+- Recomputation works reliably only if operations are deterministic — producing the same output given the same input
+- **Nondeterministic** behavior (e.g., random numbers, iteration over unordered hash tables, time-based logic, or external data) can cause **inconsistencies** and cascading failures, requiring **downstream recomputation**. Thus, **operators** should be designed to be **deterministic**, often by fixing **random seeds** or controlling ordering.
+- However, recomputation isn’t always ideal — if **intermediate** results are **small** or the computation is expensive, it’s **cheaper** to **materialize intermediate data** than to recompute it after a failure.
+
+#### Discussion of materialization
+
+- `MapReduce` writes each stage’s output to **temporary files**, while **dataflow engines** operate more like Unix pipes, passing data between **operators** **incrementally** without waiting for full input completion.
+- Only certain operations, such as **sorting**, must **buffer** all input before producing output, but most workflow stages can execute in a **pipelined** fashion.
+- When a job finishes, its final output is still materialized — typically written to a distributed filesystem like HDFS for durability and accessibility. Inputs remain **immutable**, and outputs are **fully replaced**, just as in `MapReduce`. The main improvement is that intermediate data doesn’t need to be written to disk, significantly **speeding up execution**.
+
+### Graphs and Iterative Processing
