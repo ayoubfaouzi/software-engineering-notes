@@ -98,7 +98,7 @@ While it’s less concise than the Unix pipeline, the Ruby version is **easier t
 ### MapReduce Job Execution
 
 - **MapReduce** is a programming **framework** for **processing large datasets** stored in **distributed filesystems** like HDFS, following a pattern similar to Unix-style log analysis pipelines.
-0 It works in four main steps:
+- It works in four main steps:
   - Read and parse input files into records (e.g., each log line).
   - **Map phase**: the mapper function extracts **key-value pairs** from each record (e.g., URL as key).
   - **Sort phase**: all key-value pairs are **automatically sorted** by **key**.
@@ -286,3 +286,43 @@ Beyond joins, MapReduce’s “bring related data to the same place” pattern i
 - **Automatic fault recovery**: Failed MapReduce tasks can be retried safely since inputs are immutable and failed outputs discarded.
 - **Reusability and monitoring**: The same input data can feed multiple jobs, including quality checks and metrics comparisons.
 - **Separation of concerns**: Logic (what the job does) is separate from configuration (where inputs/outputs are), enabling modularity and team collaboration.
+
+### Comparing Hadoop to Distributed Databases
+
+- Hadoop combines HDFS (filesystem) and MapReduce (processing) — like a distributed Unix system where every process runs with a built-in sort step.
+- MapReduce wasn’t conceptually new — **parallel join** and **grouping** algorithms existed in **MPP** databases decades earlier (e.g., `Teradata`, `Gamma`).
+- The main difference:
+  - **MPP** databases are optimized for **SQL-based analytic** queries.
+  - `Hadoop` is a **general-purpose** computation platform that can run any kind of program.
+
+#### Diversity of Storage (Data Lake Approach)
+
+- MPP databases require data to fit a **predefined schema** and **storage model**.
+- `Hadoop` allows storing any kind of data (text, binary, logs, images, etc.) as plain files — schema is optional.
+- This flexibility led to the “data lake” idea: dump all data first, then define structure later (schema-on-read).
+- 👍:
+  - Enables faster **data collection** and **experimentation**.
+  - Different consumers can interpret the same raw data in their own ways.
+- 👎 Shifts complexity from the producer to the consumer.
+- ▶️ `Hadoop` became central to ETL pipelines, preparing and transforming raw data before loading it into structured systems like MPP warehouses.
+
+#### Diversity of Processing Models
+
+- MPP systems are **tightly integrated** — they optimize storage, scheduling, and execution for SQL workloads.
+- `Hadoop` is modular and flexible, supporting:
+  - SQL engines (`Hive`, `Impala`)
+  - ML, search indexing, graph analysis, and more.
+- This flexibility allowed many processing models to **coexist** on the same shared cluster, all accessing data directly from HDFS.
+- This eliminated the need to **copy** data into separate systems for different workloads.
+
+#### Designing for Frequent Faults
+
+- MPP systems: Abort and retry entire queries if a node fails — acceptable for **short** jobs.
+- `MapReduce`: Retries **individual tasks** instead of **entire jobs**, writing intermediate results to disk for fault tolerance.
+- This approach suits long, large-scale jobs more likely to experience partial failures.
+- Origin: `Google’s` **preemptive scheduling environment**, where **low-priority** batch jobs can be **killed** anytime to free resources.
+ - ~5% chance per hour that a task would be preempted.
+  - Thus, MapReduce was built to handle **frequent task interruptions gracefully** 🤓.
+- In open-source clusters (`YARN`, `Mesos`, `Kubernetes`), such preemption is rarer — making some `MapReduce` trade-offs less relevant today.
+
+## Beyond MapReduce
