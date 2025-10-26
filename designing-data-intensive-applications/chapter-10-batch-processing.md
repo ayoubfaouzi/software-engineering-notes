@@ -380,3 +380,40 @@ Beyond joins, MapReduce’s “bring related data to the same place” pattern i
 - When a job finishes, its final output is still materialized — typically written to a distributed filesystem like HDFS for durability and accessibility. Inputs remain **immutable**, and outputs are **fully replaced**, just as in `MapReduce`. The main improvement is that intermediate data doesn’t need to be written to disk, significantly **speeding up execution**.
 
 ### Graphs and Iterative Processing
+
+- Early chapters discussed graphs for OLTP queries, but in batch processing, **graphs** are used for **large-scale** analysis — for example, **PageRank**, recommendation systems, and transitive closures. These algorithms often require iterative computation, repeatedly traversing edges until a condition is met.
+- Using `MapReduce` for such algorithms is **inefficient** because it reprocesses the entire dataset **each iteration**, even if only a small part changes. To address this, the **Pregel** (*Bulk Synchronous Parallel*, BSP) model was introduced (implemented in `Apache Giraph`, `Spark GraphX`, and `Flink Gelly`).
+- In Pregel, computation is vertex-centric:
+  - Each vertex keeps its own state and receives messages from other vertices each iteration.
+  - The vertex function processes messages and can send new ones along edges.
+  - If a vertex receives no messages, it does no work.
+- This is similar to the **actor model**, but Pregel guarantees **synchronous message delivery** between rounds and **fault tolerance** through **checkpointing** vertex states after each iteration.
+- **Parallelism** is achieved by partitioning the graph across machines; however, poor partitioning can cause heavy **cross-machine** communication, often making distributed **graph processing slower** than single-machine solutions when the graph fits in memory.
+
+### High-Level APIs and Languages
+
+Over time, distributed batch processing systems have matured to handle **petabyte-scale datasets** across thousands of machines. With infrastructure challenges largely solved, attention shifted toward improving **programming models**, **execution efficiency**, and expanding use cases.
+
+#### From MapReduce to Dataflow Engines
+- **High-level abstractions** like Hive, Pig, Cascading, and Crunch emerged to simplify MapReduce programming.
+- Frameworks such as **Tez**, **Spark**, and **Flink** introduced **dataflow APIs**, inspired by FlumeJava, which use **relational-style operations** (joins, filters, aggregates, etc.) for expressing computations.
+- These APIs enable **interactive, exploratory data analysis**, similar to the **Unix philosophy**, allowing incremental experimentation.
+
+#### Declarative Query Optimization
+- Declarative query languages allow frameworks to **automatically select efficient join algorithms** and optimize join order based on data statistics.
+- **Cost-based query optimizers** in Hive, Spark, and Flink enhance performance by minimizing intermediate data.
+- Unlike SQL’s fully declarative model, MapReduce retains **function callback flexibility**, allowing integration with external libraries (e.g., NLP, image analysis, statistics).
+
+#### Declarative Efficiency and Vectorization
+- Even for simple filters and mappings, declarative expression improves performance:
+  - Enables **column-oriented storage** optimizations.
+  - Allows **vectorized execution** (tight loops, CPU cache efficiency).
+  - Systems like **Spark** (via JVM bytecode) and **Impala** (via LLVM) generate optimized machine code for data operations.
+- These optimizations make batch systems **comparable in speed to MPP databases**, while preserving their flexibility to handle arbitrary code and formats.
+
+#### Specialization and Domain Extensions
+- Common algorithmic patterns are now standardized via reusable implementations:
+  - **Machine Learning**: Mahout (on MapReduce/Spark/Flink), MADlib (inside MPP databases).
+  - **Spatial Algorithms**: e.g., *k-nearest neighbors* for similarity searches.
+  - **Bioinformatics**: Approximate genome matching and string similarity search.
+- As **batch frameworks** adopt declarative operators and **databases** become more extensible, the two domains converge—both evolving into **general-purpose systems for storing and processing data**.
