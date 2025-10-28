@@ -35,12 +35,12 @@
 
 - Some messaging systems bypass intermediaries and use **direct network communication** between producers and consumers. Examples include:
   - **UDP Multicast**
-    - Common in finance (e.g., stock market feeds) for **low-latency** message delivery.  
+    - Common in finance (e.g., stock market feeds) for **low-latency** message delivery.
     - UDP is unreliable, but higher-level protocols can **recover lost packets** by retransmission.
   - **Brokerless Messaging (ZeroMQ, nanomsg)**
     - Implement **publish/subscribe** models over **TCP or IP multicast**, avoiding centralized brokers.
   - **Metrics Collection (StatsD, Brubeck)**
-    - Use **unreliable UDP** to send lightweight metrics across machines.  
+    - Use **unreliable UDP** to send lightweight metrics across machines.
     - Since UDP can drop packets, results (e.g., counters) are **approximate** at best.
   - **Webhooks (HTTP/RPC Push Model)**
     - A producer pushes messages directly to a consumer’s **callback URL** whenever an event occurs.
@@ -52,19 +52,19 @@
 
 #### Message Brokers
 
-- **Message brokers** (or **message queues**) act as intermediaries between producers and consumers, functioning like a specialized **database for message streams**.  
+- **Message brokers** (or **message queues**) act as intermediaries between producers and consumers, functioning like a specialized **database for message streams**.
 - They run as **servers**, with producers and consumers connecting as **clients**:
-  - **Producers** write messages to the broker.  
+  - **Producers** write messages to the broker.
   - **Consumers** read messages from it.
 - 🔑 Characteristics:
   - **Centralized durability and reliability:**
-    - The broker manages persistence and client disconnections.  
-    - Some brokers keep messages **in memory** only.  
+    - The broker manages persistence and client disconnections.
+    - Some brokers keep messages **in memory** only.
     - Others **persist to disk** to survive crashes.
-  - **Handling slow consumers:**  
+  - **Handling slow consumers:**
     - Brokers typically use **unbounded queueing** (buffering messages) rather than dropping them or applying backpressure — though this behavior can be **configured**.
-  - **Asynchronous delivery model:**  
-    - Producers only wait for **acknowledgment** that the broker has **buffered the message**, not for consumers to process it.  
+  - **Asynchronous delivery model:**
+    - Producers only wait for **acknowledgment** that the broker has **buffered the message**, not for consumers to process it.
     - Messages are then delivered **later**, possibly immediately or after delays if **queues backlog**.
 - 👉 Message brokers **decouple producers and consumers**, providing **fault tolerance**, **durability**, and **asynchronous communication**—but at the cost of **potential queuing delays**.
 
@@ -72,16 +72,16 @@
 
 - Some **message brokers** can participate in **two-phase commits** (via **XA** or **JTA**), making them somewhat similar to **databases**, though several key differences remain:
   - **Data Retention:**
-    - **Databases** store data until explicitly deleted.  
+    - **Databases** store data until explicitly deleted.
     - **Message brokers** usually **delete messages after delivery**, making them unsuitable for long-term storage.
   - **Working Set Size:**
-    - Brokers assume **short queues** and **small working sets**.  
+    - Brokers assume **short queues** and **small working sets**.
     - When consumers are slow and queues grow large, performance and throughput **degrade** - especially if messages spill to disk.
   - **Data Access:**
-    - Databases offer **secondary indexes** and **search queries**.  
+    - Databases offer **secondary indexes** and **search queries**.
     - Brokers allow clients to **subscribe** to specific **topics or patterns**, providing a more limited filtering mechanism.
   - **Change Awareness:**
-    - Database queries give **point-in-time snapshots**; clients must **poll** to detect updates.  
+    - Database queries give **point-in-time snapshots**; clients must **poll** to detect updates.
     - Brokers **push notifications** when new messages arrive, providing **real-time updates**.
 - This traditional model is defined by **JMS** and **AMQP** standards and implemented in systems such as: **RabbitMQ**, **ActiveMQ**, **Google Cloud Pub/Sub**.
 
@@ -121,3 +121,92 @@
 - Message brokers like `JMS` and `AMQP` try to preserve order, but **load balancing + redelivery** can still reorder messages.
 - To maintain strict ordering ▶️ Use a **dedicated queue per consumer** (no load balancing).
 - Reordering is acceptable if messages are **independent**, but problematic if **causal dependencies** exist between messages.
+
+### Partitioned Logs
+
+#### **From Transient Messaging to Durable Logs**
+- Traditional messaging systems (like AMQP/JMS) are **transient**:
+  - Messages are deleted after being consumed.
+  - Adding a new consumer only gives access to **future messages**.
+  - Reprocessing past data is impossible.
+- Databases, by contrast, keep data **durably**, enabling reprocessing and experimentation.
+**Log-based message brokers** combine both ideas — durable, append-only storage with streaming semantics.
+
+### **How Log-Based Brokers Work**
+- A **log** is an append-only sequence of records on disk.
+- **Producers** append messages to the log’s end.
+- **Consumers** read sequentially and wait for new messages (like `tail -f`).
+- Logs are **partitioned** for scalability, allowing parallelism across machines.
+- Each partition has **monotonically increasing offsets** that uniquely identify messages.
+- Examples: **Apache Kafka**, **Amazon Kinesis Streams**, **Twitter DistributedLog**, **Google Pub/Sub**.
+<p align="center"><img src="assets/partitioned-logs.png" width="500px" height="auto"></p>
+
+👉 These systems achieve **high throughput (millions of msgs/sec)** via partitioning and replication.
+
+### **Log-Based vs. Traditional Messaging**
+
+| Feature | Traditional Brokers (AMQP/JMS) | Log-Based Brokers (Kafka-style) |
+|----------|-------------------------------|--------------------------------|
+| **Message retention** | Deleted after consumption | Retained for configured time |
+| **Fan-out** | Requires duplication | Natural — multiple consumers can read same log |
+| **Ordering** | Can reorder under load balancing | Strict within each partition |
+| **Reprocessing** | Not possible (messages deleted) | Possible via offsets |
+| **Consumer tracking** | Per-message acks | Simple per-partition offset tracking |
+| **Throughput** | Degrades when queues grow | Constant (disk-based append only) |
+
+### **Consumer Offsets and Recovery**
+- Each consumer tracks a **current offset**.
+- Broker doesn’t need per-message **acknowledgments** — just records offsets periodically.
+- If a consumer crashes:
+  - Another node can resume from the last recorded offset.
+  - Some messages may reprocess if offsets weren’t committed yet (duplicates).
+
+This mirrors **database replication**: offsets act like **log sequence numbers**.
+
+### **Disk Space and Retention**
+- Logs are **divided into segments**; old ones are periodically **deleted or archived**.
+- Acts as a **bounded disk buffer** (circular buffer):
+  - Example: A 6 TB drive at 150 MB/s can hold ~11 hours of messages.
+  - Usually, retention is configured to keep **days or weeks** of data.
+- Throughput remains **constant** regardless of history size (unlike memory-based brokers).
+
+### **Handling Slow Consumers**
+- The log-based approach uses **disk buffering** instead of backpressure or dropping.
+- If a consumer falls too far behind (past retention window), it **misses messages**.
+- Other consumers remain unaffected — great for **fault isolation** and **experimentation**.
+- Operators can monitor consumer lag and take corrective action before loss.
+
+### **Replaying Messages**
+- Consuming from a log is **non-destructive** — the log remains intact.
+- Consumers can **reset offsets** to reprocess historical data (e.g., replay yesterday’s data).
+- Enables:
+  - Rebuilding derived datasets.
+  - Experimentation with new logic.
+  - Easy recovery from bugs or data corruption.
+
+### **Key Advantages**
+- Durable storage + low-latency streaming.
+- Simplified bookkeeping via offsets.
+- Natural fan-out for multiple consumers.
+- Replay and reprocessing support (like batch jobs).
+- Operational robustness — consumers can come and go independently.
+
+## Databases and Streams
+
+- **Writes = Events** → Every database write is an event that can be captured and streamed.  
+- **Replication Logs = Event Streams** → Leaders produce a stream of writes; followers consume it to stay in sync.  
+- **State Machine Replication** → If replicas process the same events in the same order, they reach the same state.  
+- **Key Insight** → Databases store **current state**; streams record **state changes** (history).  
+- **Unified View** → Databases and event streams are two sides of the same coin — one shows the end result, the other shows how it got there.
+
+### Keeping Systems in Sync
+
+- Modern applications use multiple systems (OLTP databases, caches, search indexes, data warehouses), each with its own optimized copy of the data. These copies must be kept **synchronized** when data changes.
+- **Common Synchronization Methods:**
+  - **Batch ETL Processes:** Effective for data warehouses, involving periodic full dumps and bulk loading.
+  - **Dual Writes:** The application code explicitly writes to all systems (e.g., database, then search index, then cache) when data changes.
+- **Problems with Dual Writes:**
+  - **Race Conditions:** Concurrent clients can cause systems to see writes in different orders, leading to permanent inconsistency (e.g., the database ends with value B while the search index ends with value A).
+  - **Fault Tolerance:** If one write succeeds and another fails, the systems become inconsistent. Solving this requires an expensive atomic commit protocol.
+- **The Core Issue:** Dual writes fail because there is no single system determining the order of writes across the different technologies (like having multiple leaders).
+- **Proposed Solution:** A better approach is to have a single leader (e.g., the database) and make the other systems (like the search index) followers that consume its stream of changes.
