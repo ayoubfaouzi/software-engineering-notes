@@ -492,7 +492,7 @@ State (windows, aggregates, joins) must survive failures:
 - **Local state + checkpoint replication** (Flink, Samza, Kafka Streams): faster, efficient.  
 - **Rebuild from logs** (replay events or CDC streams) when feasible.
 
-#### Key Idea
+#### Key Idea ✨
 
 Stream processors emulate *exactly-once semantics* via:
 - **Microbatching** or **checkpointing** for internal fault tolerance.  
