@@ -137,3 +137,53 @@ Modern architectures overcome Lambda’s downsides by **unifying batch and strea
   1. **Event replay**: ability to reprocess historical data through the same pipeline, e.g., Kafka’s log replay or reading from distributed filesystems (HDFS)
   2. **Exactly-once semantics**: ensures consistent outputs despite failures  
   3. **Event-time windowing**: processes data based on event timestamps, not processing time. Supported by frameworks like **Apache Beam**, **Flink**, and **Google Cloud Dataflow**
+
+## Unbundling Databases
+
+At a high level, **databases**, **Hadoop**, and **operating systems** share a common goal: managing data storage and processing. While Unix provides low-level abstractions (files, pipes), relational databases offer high-level abstractions (SQL, transactions) that hide complexity such as concurrency and recovery. The philosophical tension between Unix simplicity and database abstraction continues today - manifesting in movements like **NoSQL**, which adopt Unix-style low-level flexibility for distributed systems.
+
+### Composing Data Storage Technologies
+
+Databases internally implement mechanisms like:
+- **Secondary indexes** (for efficient lookups)
+- **Materialized views** (cached query results)
+- **Replication logs** (for data consistency across nodes)
+- **Full-text search indexes**
+
+These functions parallel how **batch** and **stream processors** manage derived data systems.  
+For example, creating a database index resembles setting up a **new replica** or **bootstrapping change data capture**—it involves scanning existing data and keeping updates synchronized.
+
+Thus, the entire dataflow of an organization can be viewed as one large “meta-database,” where batch and stream processors maintain various derived data views—akin to indexes or materialized views—across multiple systems.
+
+### Two Integration Philosophies
+
+#### 1. **Federated Databases (Unifying Reads)**
+- Provide a **single query interface** across diverse storage engines.
+- Example: PostgreSQL’s **Foreign Data Wrappers**.
+- Follows the relational tradition — high-level unified querying over heterogeneous systems.
+- Suitable for combining data for read-only purposes.
+
+#### 2. **Unbundled Databases (Unifying Writes)**
+- Focus on **keeping multiple systems in sync**.
+- Instead of distributed transactions, rely on **asynchronous event logs** and **idempotent writes**.
+- Inspired by Unix’s philosophy: small, composable tools communicating via uniform APIs (like pipes).
+
+#### Benefits of Log-Based (Unbundled) Integration
+1. **System robustness** — asynchronous event logs decouple components, preventing local failures from escalating system-wide.
+2. **Team autonomy** — each service or data system can evolve independently, connected via durable, ordered logs that maintain consistency.
+
+### Unbundled vs Integrated Systems
+
+- **Databases remain essential** for maintaining local state and serving queries from batch/stream outputs.
+- **Specialized engines** (e.g., MPP warehouses) will continue to exist for niche workloads.
+- Integrated systems can offer better performance and easier management for specific needs.
+- **Unbundling’s goal** is not outperforming single databases, but enabling **breadth** — combining multiple specialized systems for a wider range of workloads.
+
+Use integrated systems if one tool meets your needs; embrace unbundling when no single system fits all requirements.
+
+### What’s Missing: The “Unix Shell” for Data Systems
+
+We still lack a **declarative, high-level language** to compose unbundled data systems as easily as Unix commands.  
+Ideally, one could define: `mysql | elasticsearch` to automatically replicate and index MySQL data into Elasticsearch, handling changes transparently—without custom glue code.
+
+Future systems could extend this idea to **declarative caching and materialized views**, possibly using innovations like **differential dataflow**, bridging the gap between low-level unbundled tools and the declarative power of databases.
