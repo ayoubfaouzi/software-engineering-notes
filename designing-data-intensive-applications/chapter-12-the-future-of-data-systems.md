@@ -187,3 +187,35 @@ We still lack a **declarative, high-level language** to compose unbundled data s
 Ideally, one could define: `mysql | elasticsearch` to automatically replicate and index MySQL data into Elasticsearch, handling changes transparently—without custom glue code.
 
 Future systems could extend this idea to **declarative caching and materialized views**, possibly using innovations like **differential dataflow**, bridging the gap between low-level unbundled tools and the declarative power of databases.
+
+### Designing Applications Around Dataflow
+
+The **“database inside-out”** or **unbundled database** approach advocates composing applications from specialized storage and processing systems instead of relying on monolithic databases. It’s best seen as a **design pattern** that encourages modular, dataflow-oriented system design. The concept draws from **dataflow**, **functional reactive**, and **logic programming**, as well as the **automatic recalculation model of spreadsheets**—where dependent results update automatically when inputs change.
+- Spreadsheets automatically refresh derived values when inputs change; data systems should do the same for indexes, caches, and aggregations. The challenge is doing this **reliably, at scale, and durably** across distributed components.
+
+#### Application Code as Derivation Functions
+
+-  Many data artifacts (indexes, full-text search, ML models, caches) are **derived datasets** computed through transformation functions.  
+  - Some derivations (like secondary indexes) are built-in to databases.  
+  - Others (like ML models or domain-specific caches) require **custom application logic**.  
+  - This custom logic often struggles within databases’ limited UDF or trigger systems 🤷.
+
+#### Separation of Code and State* 
+
+- Databases are poor environments for managing modern application code—lacking tools for versioning, dependency management, observability, and integration.  
+- Instead, **databases should focus on storage**, while platforms like **Kubernetes or Docker** manage code execution.  
+- This leads to a **separation of application logic (stateless services)** and **persistent state (databases)**—a principle humorously referred to as separating *“Church and state.”*
+- **From Polling to Dataflow**:
+  - Traditional databases are **passive**—applications poll for changes.  
+  - **Dataflow systems**, by contrast, are **reactive**: they treat state changes as streams of events that trigger further computations or updates.  
+  - This unifies concepts from **event logs, triggers, and stream processors** into one model of computation where code reacts to data changes.
+- **Derived Data and Streams**  
+  - Maintaining derived datasets (indexes, caches, analytics) demands **ordered**, **fault-tolerant**, and **reliable** message processing—similar to how **stream processors** operate.  
+  - Modern stream systems can ensure **ordering** and **exactly-once processing**, enabling **application code to run as composable stream operators** (like Unix pipes).
+- **From Microservices to Dataflow Systems**  
+  While **microservices** communicate via synchronous APIs (REST/RPC), **dataflow systems** connect through **asynchronous event streams**.  
+  - This yields **better performance and fault tolerance**.  
+  - Example: instead of querying an exchange-rate service on each purchase, an app can **subscribe to exchange-rate updates**, store them locally, and join them with purchase events.  
+  - ▶️ The result is faster, more resilient, and naturally models **time-dependent computations**.
+
+### Observing Derived State
