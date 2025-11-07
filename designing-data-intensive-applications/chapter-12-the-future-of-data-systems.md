@@ -219,3 +219,60 @@ The **“database inside-out”** or **unbundled database** approach advocates c
   - ▶️ The result is faster, more resilient, and naturally models **time-dependent computations**.
 
 ### Observing Derived State
+
+This section connects **dataflow systems** with the concepts of **read and write paths**, exploring how data moves from ingestion to user consumption, how caches and indexes shift computational work, and how event-driven architectures can extend all the way to clients.
+<p align="center"><img src="assets/read-vs-write-path.png" width="450px" height="auto"></p>
+
+### Write Path vs. Read Path
+
+- **Write path:** Precomputes derived data (indexes, views, models) when new data is written.  
+- **Read path:** Executes computations at query time when users request information.  
+- The two are ⚖️ more computation at write time (materialized views, indexes) can make reads faster, while minimal precomputation makes writes cheap but reads slower.
+- This balance mirrors **eager vs. lazy evaluation** in functional programming.  
+- Indexes, caches, and materialized views represent different points along this spectrum.
+
+#### Materialized Views and caching
+
+- A **search index** shifts some work to the write path (updating index entries) to make reads faster.  
+- Precomputing results for every query (pure caching) would make writes impossible—too expensive and infinite in scope.  
+- Caching common queries is a practical middle ground: precompute popular results and update them incrementally.
+
+▶️ Thus, **caches, indexes, and views** all serve as boundaries that define **how much work happens at write time versus read time**.
+
+#### Stateful, offline-capable clients
+
+Modern applications blur this boundary further:
+- Traditional **stateless clients** rely on synchronous server requests.  
+- **Stateful, offline-capable clients** (e.g., mobile apps, SPAs) keep local state and sync in the background, acting like caches or materialized views of server state.  
+- This model improves responsiveness and offline functionality—important when connectivity is intermittent.
+
+#### Pushing State Changes to Clients
+
+Instead of clients polling servers:
+- **Server-sent events (SSE)** and **WebSockets** allow servers to push updates in real time.
+- This extends the **write path** to the end user: clients receive a stream of state changes after initial synchronization.
+- Techniques from **stream processing** (like consumer offsets in Kafka) allow clients to resume from missed updates when reconnecting.
+
+This creates an **end-to-end event stream**, connecting data changes in the backend to user interfaces on devices.
+
+#### End-to-End Event Streams
+
+- Modern UI frameworks (e.g., **Elm**, **React**, **Flux**, **Redux**) already model user interaction as event streams.
+- Extending this paradigm:
+  - Servers can push state changes directly into client-side event pipelines.
+  - This creates a full **reactive dataflow** from backend events to UI updates with sub-second latency.
+- While used in real-time apps like chat or gaming, this model could apply to all apps—if databases and APIs supported **subscribe-to-change** semantics instead of just request/response.
+
+#### Reads are Events too
+
+- Reads can be modeled as **streams of query events** processed alongside write streams.
+- A stream processor can join **read events** with stored state, effectively performing **stream-table joins**.
+- Recording read events also helps track **causal dependencies** (e.g., “what data did the user see before making a purchase?”), improving auditability and analytics.
+
+This unifies reading and writing under the same **event-driven abstraction**, where both are logs of state interactions.
+
+#### Multi-Partition Data Processing
+
+Treating queries as streams allows distributed joins and computations across partitions:
+- Examples include computing the reach of a URL on Twitter or assessing fraud risk by joining multiple reputation databases.
+- These patterns resemble internal query execution graphs in **MPP databases**, though stream processors can generalize the idea for **large-scale, real-time systems**.
