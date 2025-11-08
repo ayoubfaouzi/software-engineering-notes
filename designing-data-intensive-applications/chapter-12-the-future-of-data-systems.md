@@ -22,12 +22,12 @@ The final chapter shifts focus from how systems **are** to how they **should be*
 
 #### Derived Data vs. Distributed Transactions
 
-| Aspect | Distributed Transactions | Derived Data (Log-based) |
-|--------|---------------------------|---------------------------|
-| Ordering | Locks & 2PL | Log ordering |
-| Commit Model | Atomic commit | Deterministic retry + idempotence |
-| Consistency | Linearizable | Eventually consistent |
-| Performance | High coordination cost | Asynchronous, scalable |
+| Aspect       | Distributed Transactions | Derived Data (Log-based)          |
+| ------------ | ------------------------ | --------------------------------- |
+| Ordering     | Locks & 2PL              | Log ordering                      |
+| Commit Model | Atomic commit            | Deterministic retry + idempotence |
+| Consistency  | Linearizable             | Eventually consistent             |
+| Performance  | High coordination cost   | Asynchronous, scalable            |
 
 - Distributed transactions (e.g., XA/2PC) provide strong guarantees but **poor fault tolerance and performance**.
 - Log-based derived data systems are **more promising** for integration, though they lack immediate consistency guarantees.
@@ -36,6 +36,7 @@ The final chapter shifts focus from how systems **are** to how they **should be*
 #### The Limits of Total Ordering
 
 Constructing a **totally ordered event log** works for small systems but faces limits as scale increases:
+
 1. **Throughput**: a single leader cannot handle all events.
 2. **Geographic Distribution**: multiple data centers introduce ambiguous orderings.
 3. **Microservices**: independent services lack shared durable state.
@@ -47,6 +48,7 @@ Scaling consensus across partitions or datacenters remains an **open research ch
 #### Ordering Events to Capture Causality
 
 When total order is infeasible, causal relationships must still be preserved:
+
 - Example: a user unfriends someone, then posts a message. If causality is lost, the ex-partner might still get notified.
 - The challenge: maintain **causal dependencies** between related events stored in different systems.
 
@@ -62,6 +64,7 @@ Over time, application patterns may evolve to **efficiently capture causality** 
 
 The main goal of **data integration** is to ensure that data is transformed into the right form and delivered to the right places.  
 This involves:
+
 - **Consuming inputs**
 - **Transforming, joining, filtering, aggregating**
 - **Training and evaluating models**
@@ -72,18 +75,21 @@ This involves:
 #### Derived Datasets
 
 The outputs of these processing systems are **derived datasets**, such as:
-- Search indexes  
-- Materialized views  
-- Recommendations  
-- Aggregate metrics  
+
+- Search indexes
+- Materialized views
+- Recommendations
+- Aggregate metrics
 
 Batch and stream processing share similar principles; the key distinction is:
-- **Batch processing** → finite datasets  
+
+- **Batch processing** → finite datasets
 - **Stream processing** → unbounded, continuous data
 
 Modern systems blur this line:
-- **Apache Spark**: stream processing via *microbatches*  
-- **Apache Flink**: batch processing built on top of a streaming model  
+
+- **Apache Spark**: stream processing via _microbatches_
+- **Apache Flink**: batch processing built on top of a streaming model
 
 #### Maintaining Derived State
 
@@ -92,11 +98,11 @@ Modern systems blur this line:
   - Immutable inputs and append-only outputs
   - No side effects other than explicit outputs
 - Stream processors extend this model with **managed, fault-tolerant state**.
-  - 👍 Improves **fault tolerance** through **idempotent and deterministic** processing  
-  - 👍 Simplifies **reasoning about dataflows** across an organization  
+  - 👍 Improves **fault tolerance** through **idempotent and deterministic** processing
+  - 👍 Simplifies **reasoning about dataflows** across an organization
   - 👍 Makes derived data (e.g., indexes, caches, models) easier to maintain through **functional pipelines**
 - Maintaining derived systems **asynchronously** increases robustness:
-  - 👍 Failures are isolated to local components  
+  - 👍 Failures are isolated to local components
   - 👍 Avoids failure amplification common in **distributed transactions**
 
 Cross-partition indexes (e.g., term/document partitioning) are most scalable when updated asynchronously.
@@ -104,10 +110,10 @@ Cross-partition indexes (e.g., term/document partitioning) are most scalable whe
 #### Reprocessing data for application evolution
 
 - Batch and stream processing support **system evolution**:
-  - **Stream processing** → low-latency updates  
-  - **Batch processing** → large-scale reprocessing of historical data  
+  - **Stream processing** → low-latency updates
+  - **Batch processing** → large-scale reprocessing of historical data
 - Benefits of Reprocessing:
-  - Enables major **schema and model changes**, not just incremental ones  
+  - Enables major **schema and model changes**, not just incremental ones
   - Supports **gradual evolution**: maintain old and new views side-by-side
   - Allows **canary migrations** (testing new views with limited users)
   - Each step is **reversible**, reducing migration risk and improving confidence
@@ -115,27 +121,29 @@ Cross-partition indexes (e.g., term/document partitioning) are most scalable whe
 #### The Lambda Architecture
 
 The **Lambda Architecture** combines batch and stream processing:
-- **Stream layer**: processes recent data for quick, approximate updates  
-- **Batch layer**: reprocesses historical data for accurate, corrected results  
+
+- **Stream layer**: processes recent data for quick, approximate updates
+- **Batch layer**: reprocesses historical data for accurate, corrected results
 - Data is stored as **immutable, append-only events**
 - **Advantages**:
   - Encourages **event-sourced** dataflows and **derived views**
   - Promotes **fault tolerance** through immutability and reprocessing
 - **Limitations**:
-  - Duplicated logic between batch and stream systems  
-  - Operational complexity (two frameworks to maintain)  
-  - Difficulty merging outputs from batch and stream pipelines  
-  - Expensive to frequently reprocess large datasets  
+  - Duplicated logic between batch and stream systems
+  - Operational complexity (two frameworks to maintain)
+  - Difficulty merging outputs from batch and stream pipelines
+  - Expensive to frequently reprocess large datasets
   - Incremental batch updates add **temporal complexity** and blur distinctions between layers
 
 #### Unifying Batch and Stream Processing
 
 Modern architectures overcome Lambda’s downsides by **unifying batch and streaming**:
+
 - One engine handles **both historical reprocessing** and **live event processing**
 - Simplifies code reuse, operations, and consistency guarantees
 - **Required Features**:
   1. **Event replay**: ability to reprocess historical data through the same pipeline, e.g., Kafka’s log replay or reading from distributed filesystems (HDFS)
-  2. **Exactly-once semantics**: ensures consistent outputs despite failures  
+  2. **Exactly-once semantics**: ensures consistent outputs despite failures
   3. **Event-time windowing**: processes data based on event timestamps, not processing time. Supported by frameworks like **Apache Beam**, **Flink**, and **Google Cloud Dataflow**
 
 ## Unbundling Databases
@@ -145,6 +153,7 @@ At a high level, **databases**, **Hadoop**, and **operating systems** share a co
 ### Composing Data Storage Technologies
 
 Databases internally implement mechanisms like:
+
 - **Secondary indexes** (for efficient lookups)
 - **Materialized views** (cached query results)
 - **Replication logs** (for data consistency across nodes)
@@ -158,17 +167,20 @@ Thus, the entire dataflow of an organization can be viewed as one large “meta-
 ### Two Integration Philosophies
 
 #### 1. **Federated Databases (Unifying Reads)**
+
 - Provide a **single query interface** across diverse storage engines.
 - Example: PostgreSQL’s **Foreign Data Wrappers**.
 - Follows the relational tradition — high-level unified querying over heterogeneous systems.
 - Suitable for combining data for read-only purposes.
 
 #### 2. **Unbundled Databases (Unifying Writes)**
+
 - Focus on **keeping multiple systems in sync**.
 - Instead of distributed transactions, rely on **asynchronous event logs** and **idempotent writes**.
 - Inspired by Unix’s philosophy: small, composable tools communicating via uniform APIs (like pipes).
 
 #### Benefits of Log-Based (Unbundled) Integration
+
 1. **System robustness** — asynchronous event logs decouple components, preventing local failures from escalating system-wide.
 2. **Team autonomy** — each service or data system can evolve independently, connected via durable, ordered logs that maintain consistency.
 
@@ -191,50 +203,52 @@ Future systems could extend this idea to **declarative caching and materialized 
 ### Designing Applications Around Dataflow
 
 The **“database inside-out”** or **unbundled database** approach advocates composing applications from specialized storage and processing systems instead of relying on monolithic databases. It’s best seen as a **design pattern** that encourages modular, dataflow-oriented system design. The concept draws from **dataflow**, **functional reactive**, and **logic programming**, as well as the **automatic recalculation model of spreadsheets**—where dependent results update automatically when inputs change.
+
 - Spreadsheets automatically refresh derived values when inputs change; data systems should do the same for indexes, caches, and aggregations. The challenge is doing this **reliably, at scale, and durably** across distributed components.
 
 #### Application Code as Derivation Functions
 
--  Many data artifacts (indexes, full-text search, ML models, caches) are **derived datasets** computed through transformation functions.  
-  - Some derivations (like secondary indexes) are built-in to databases.  
-  - Others (like ML models or domain-specific caches) require **custom application logic**.  
-  - This custom logic often struggles within databases’ limited UDF or trigger systems 🤷.
+- Many data artifacts (indexes, full-text search, ML models, caches) are **derived datasets** computed through transformation functions.
+- Some derivations (like secondary indexes) are built-in to databases.
+- Others (like ML models or domain-specific caches) require **custom application logic**.
+- This custom logic often struggles within databases’ limited UDF or trigger systems 🤷.
 
-#### Separation of Code and State* 
+#### Separation of Code and State\*
 
-- Databases are poor environments for managing modern application code—lacking tools for versioning, dependency management, observability, and integration.  
-- Instead, **databases should focus on storage**, while platforms like **Kubernetes or Docker** manage code execution.  
-- This leads to a **separation of application logic (stateless services)** and **persistent state (databases)**—a principle humorously referred to as separating *“Church and state.”*
+- Databases are poor environments for managing modern application code—lacking tools for versioning, dependency management, observability, and integration.
+- Instead, **databases should focus on storage**, while platforms like **Kubernetes or Docker** manage code execution.
+- This leads to a **separation of application logic (stateless services)** and **persistent state (databases)**—a principle humorously referred to as separating _“Church and state.”_
 - **From Polling to Dataflow**:
-  - Traditional databases are **passive**—applications poll for changes.  
-  - **Dataflow systems**, by contrast, are **reactive**: they treat state changes as streams of events that trigger further computations or updates.  
+  - Traditional databases are **passive**—applications poll for changes.
+  - **Dataflow systems**, by contrast, are **reactive**: they treat state changes as streams of events that trigger further computations or updates.
   - This unifies concepts from **event logs, triggers, and stream processors** into one model of computation where code reacts to data changes.
-- **Derived Data and Streams**  
-  - Maintaining derived datasets (indexes, caches, analytics) demands **ordered**, **fault-tolerant**, and **reliable** message processing—similar to how **stream processors** operate.  
+- **Derived Data and Streams**
+  - Maintaining derived datasets (indexes, caches, analytics) demands **ordered**, **fault-tolerant**, and **reliable** message processing—similar to how **stream processors** operate.
   - Modern stream systems can ensure **ordering** and **exactly-once processing**, enabling **application code to run as composable stream operators** (like Unix pipes).
 - **From Microservices to Dataflow Systems**  
-  While **microservices** communicate via synchronous APIs (REST/RPC), **dataflow systems** connect through **asynchronous event streams**.  
-  - This yields **better performance and fault tolerance**.  
-  - Example: instead of querying an exchange-rate service on each purchase, an app can **subscribe to exchange-rate updates**, store them locally, and join them with purchase events.  
+  While **microservices** communicate via synchronous APIs (REST/RPC), **dataflow systems** connect through **asynchronous event streams**.
+  - This yields **better performance and fault tolerance**.
+  - Example: instead of querying an exchange-rate service on each purchase, an app can **subscribe to exchange-rate updates**, store them locally, and join them with purchase events.
   - ▶️ The result is faster, more resilient, and naturally models **time-dependent computations**.
 
 ### Observing Derived State
 
 This section connects **dataflow systems** with the concepts of **read and write paths**, exploring how data moves from ingestion to user consumption, how caches and indexes shift computational work, and how event-driven architectures can extend all the way to clients.
+
 <p align="center"><img src="assets/read-vs-write-path.png" width="450px" height="auto"></p>
 
 ### Write Path vs. Read Path
 
-- **Write path:** Precomputes derived data (indexes, views, models) when new data is written.  
-- **Read path:** Executes computations at query time when users request information.  
+- **Write path:** Precomputes derived data (indexes, views, models) when new data is written.
+- **Read path:** Executes computations at query time when users request information.
 - The two are ⚖️ more computation at write time (materialized views, indexes) can make reads faster, while minimal precomputation makes writes cheap but reads slower.
-- This balance mirrors **eager vs. lazy evaluation** in functional programming.  
+- This balance mirrors **eager vs. lazy evaluation** in functional programming.
 - Indexes, caches, and materialized views represent different points along this spectrum.
 
 #### Materialized Views and caching
 
-- A **search index** shifts some work to the write path (updating index entries) to make reads faster.  
-- Precomputing results for every query (pure caching) would make writes impossible—too expensive and infinite in scope.  
+- A **search index** shifts some work to the write path (updating index entries) to make reads faster.
+- Precomputing results for every query (pure caching) would make writes impossible—too expensive and infinite in scope.
 - Caching common queries is a practical middle ground: precompute popular results and update them incrementally.
 
 ▶️ Thus, **caches, indexes, and views** all serve as boundaries that define **how much work happens at write time versus read time**.
@@ -242,13 +256,15 @@ This section connects **dataflow systems** with the concepts of **read and write
 #### Stateful, offline-capable clients
 
 Modern applications blur this boundary further:
-- Traditional **stateless clients** rely on synchronous server requests.  
-- **Stateful, offline-capable clients** (e.g., mobile apps, SPAs) keep local state and sync in the background, acting like caches or materialized views of server state.  
+
+- Traditional **stateless clients** rely on synchronous server requests.
+- **Stateful, offline-capable clients** (e.g., mobile apps, SPAs) keep local state and sync in the background, acting like caches or materialized views of server state.
 - This model improves responsiveness and offline functionality—important when connectivity is intermittent.
 
 #### Pushing State Changes to Clients
 
 Instead of clients polling servers:
+
 - **Server-sent events (SSE)** and **WebSockets** allow servers to push updates in real time.
 - This extends the **write path** to the end user: clients receive a stream of state changes after initial synchronization.
 - Techniques from **stream processing** (like consumer offsets in Kafka) allow clients to resume from missed updates when reconnecting.
@@ -274,5 +290,67 @@ This unifies reading and writing under the same **event-driven abstraction**, wh
 #### Multi-Partition Data Processing
 
 Treating queries as streams allows distributed joins and computations across partitions:
+
 - Examples include computing the reach of a URL on Twitter or assessing fraud risk by joining multiple reputation databases.
 - These patterns resemble internal query execution graphs in **MPP databases**, though stream processors can generalize the idea for **large-scale, real-time systems**.
+
+## Aiming for Correctness
+
+- Stateless vs. Stateful Systems:
+  - **Stateless services** can easily recover from faults—restart and move on.
+  - **Stateful systems**, by contrast, retain data permanently, so errors can have lasting consequences, requiring much greater care in design.
+- Limits of Traditional Transactions:
+  - For decades, **ACID transactions** (atomicity, isolation, durability) have been the foundation of correctness.
+  - However, they are **weaker than they appear**—especially under weak isolation levels or distributed setups.
+  - Systems may appear correct under low concurrency but fail subtly under faults or high load.
+  - Tools like **Jepsen tests** have revealed large gaps between claimed and actual database guarantees.
+  - Misconfigured applications often misuse transaction features, leading to silent data corruption.
+
+#### The Need for End-to-End Correctness
+
+- Even if databases are safe, **application logic can still cause corruption**— f or example, buggy code deleting or overwriting data.
+- **Immutable or append-only data models** make recovery easier, as they avoid destroying good data.
+- Still, immutability alone cannot prevent **duplicate or inconsistent operations**.
+
+#### Exactly-Once Execution & Idempotence
+
+- “Exactly-once” semantics aim for operations that behave as if executed only once, even after retries or faults.
+- **Retrying operations** (e.g., billing, counter increments) can cause corruption if the operation is not idempotent.
+- The fix is to make operations **idempotent**—safe to repeat without side effects.
+- This often requires tracking **unique operation IDs** or metadata to detect duplicates and enforce correctness.
+
+#### Duplicate Suppression Across Boundaries
+
+- TCP can suppress duplicate packets within a connection—but not across reconnects or between client and server.
+- Example: if a banking app retries a transaction after a network timeout, the operation could be **executed twice**.
+- **Two-phase commit (2PC)** helps decouple transactions from TCP connections but still doesn’t prevent end-user retries (e.g., repeated form submissions).
+
+#### Operation Identifiers as End-to-End Safeguards
+
+- The robust solution is **application-level deduplication**:
+  - Each operation (e.g., money transfer) carries a **unique identifier (UUID)**.
+  - The database enforces a **uniqueness constraint** on these IDs.
+  - Duplicate retries automatically fail due to constraint violations, preventing double execution.
+- This also forms the basis for **event sourcing**, where each event is logged once and downstream consumers derive state from it.
+
+#### The End-to-End Argument
+
+- Introduced by *Saltzer, Reed, and Clark* (1984):
+  _Some correctness properties can only be implemented fully with cooperation from the application endpoints—not by lower layers alone._
+- TCP, checksums, or even database transactions provide **partial reliability**, but cannot ensure full end-to-end correctness.
+- Examples:
+  - Checksums detect network corruption but not disk or software corruption.
+  - WiFi or TLS encryption secures transmission, but not the server itself.
+  - Only **end-to-end encryption and validation** ensure full integrity.
+
+#### Applying End-to-End Thinking to Data Systems
+
+- Strong transactional guarantees don’t eliminate the need for **application-level safeguards**.
+- True fault tolerance requires **end-to-end reasoning** across all layers—user, app, and data.
+- Unfortunately, implementing this correctly at the application level is **complex and error-prone**.
+- **Transactions simplify many issues** (collapsing failures to commit/abort outcomes), but they don’t scale easily across distributed or heterogeneous systems.
+- Refusing distributed transactions for performance reasons often forces developers to reimplement partial, buggy equivalents.
+- 👉  The author argues for **new fault-tolerance abstractions** that:
+  - Provide **application-specific end-to-end correctness** (like deduplication or idempotence).
+  - Are **easier to reason about** than current models.
+  - Maintain **high performance and scalability** in distributed systems.
