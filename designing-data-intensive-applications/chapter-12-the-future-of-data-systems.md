@@ -406,3 +406,71 @@ An additional processor can validate transactions (e.g., check overdrafts) befor
   - Deterministic stream processors,
   - And **end-to-end request IDs** for deduplication,
 - 👉 Systems can achieve **strong correctness guarantees** (like uniqueness and exactly-once application) **without distributed transactions**—even in multi-partition environments. This approach combines partitioned logs, deterministic processing, and idempotent writes to preserve correctness while maintaining scalability.
+
+### Timeliness and Integrity
+
+When operations are **unbundled** into asynchronous stages (e.g., logs and stream processors), we must rethink **correctness**, **consistency**, and **constraints** beyond traditional ACID transactions.  
+
+- Traditional **transactions** are **linearizable**: once committed, their writes are immediately visible.
+- In **streaming systems**, operations are **asynchronous** — producers don’t wait for consumers.
+- A client may wait for an output message (for confirmation), but correctness does not depend on waiting — only the notification does.
+- The term *consistency* actually mixes two distinct ideas:
+
+| Concept | Meaning | Violation Type | Recovery |
+|----------|----------|----------------|-----------|
+| **Timeliness** | Users see up-to-date state (fresh data) | Temporary inconsistency (eventual consistency) | Wait and retry |
+| **Integrity** | No corruption or contradictory data (derivations and views are correct) | Permanent inconsistency (data corruption) | Must be repaired |
+
+- **Integrity** violations are catastrophic (e.g., mismatched credits/debits).
+- **Timeliness** violations are merely delays (e.g., recent card transaction not yet visible).
+- In practice, **integrity matters far more than timeliness**.
+
+#### Correctness of dataflow systems
+
+Event-driven dataflow systems **decouple timeliness from integrity**:
+- They lack timeliness by default (since they are asynchronous).
+- But they can **preserve integrity** with:
+  - **Exactly-once/effectively-once semantics** (no lost or duplicate events)
+  - **Idempotent operations** and **deduplication**
+  - **Atomic writes of input messages** (fits with event sourcing)
+  - **Deterministic derivation functions** (to compute derived state)
+  - **Immutable messages** (reprocessing allows recovery from bugs)
+  - **End-to-end request IDs** (to track and deduplicate events)
+
+These mechanisms provide **strong integrity guarantees** *without distributed transactions or atomic commit*, resulting in high correctness, performance, and robustness.
+
+#### Loosely Interpreted Constraints
+
+While strict uniqueness constraints require coordination (consensus), many real-world systems can **tolerate temporary violations** if they can **compensate** afterward:
+
+- Duplicate username → apologize, ask to choose another.
+- Oversold inventory → reorder, delay shipment, offer discount.
+- Overbooked flights → compensate or upgrade.
+- Overdrawn account → apply overdraft fee.
+
+Such **compensating transactions** handle constraint violations after the fact.  
+The key: **integrity must hold**, but **timeliness of enforcement can be relaxed**.
+
+This allows **optimistic writes** followed by validation — trading strict synchronization for operational simplicity.
+
+#### Coordination-Avoiding Data Systems
+
+Two insights:
+1. **Integrity** can be maintained without atomic commit or linearizability.  
+2. Many **constraints** can be relaxed or repaired later.
+
+Therefore, **coordination-avoiding systems** can:
+- Ensure integrity without synchronous coordination.
+- Operate across datacenters with **asynchronous multi-leader replication**.
+- Achieve **high performance and availability** while tolerating weaker timeliness.
+
+In such systems:
+- **Serializable transactions** remain useful for small-scope derived state.
+- **Global distributed transactions (XA, two-phase commit, etc.)** are unnecessary.
+- **Synchronous coordination** can be selectively applied only where recovery is impossible.
+
+#### The Trade-Off
+
+- Coordination reduces inconsistencies but hurts performance and availability.  
+- Lack of coordination improves performance but may increase temporary inconsistencies.
+- 👉 The goal is to find the **sweet spot** — balancing between inconsistencies that require apologies and outages that require apologies.
