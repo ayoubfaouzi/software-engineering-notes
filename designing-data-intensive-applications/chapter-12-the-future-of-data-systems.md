@@ -354,3 +354,55 @@ Treating queries as streams allows distributed joins and computations across par
   - Provide **application-specific end-to-end correctness** (like deduplication or idempotence).
   - Are **easier to reason about** than current models.
   - Maintain **high performance and scalability** in distributed systems.
+
+### Enforcing Constraints
+
+When databases are **unbundled** into components like logs, stream processors, and storage systems, enforcing **correctness** and **constraints** (such as uniqueness or consistency) requires rethinking traditional database mechanisms.
+
+#### Uniqueness Constraints require Consensus
+
+- Enforcing **uniqueness** (e.g., unique usernames, non-overlapping bookings, no negative balances) fundamentally requires **consensus**.
+- In distributed systems, consensus ensures only one of several concurrent conflicting operations is accepted.
+- Traditionally, this is achieved with a **single leader** that serializes decisions.
+- However, if the leader fails, the system must re-enter consensus to elect a new leader.
+- **Partitioning** by the value that must be unique (e.g., username hash, request ID) can scale the system, but **asynchronous multi-master replication** cannot guarantee uniqueness—synchronous coordination is necessary.
+
+#### Uniqueness via Log-Based Messaging
+
+- **Logs** (as in Kafka-style systems) provide a **total order broadcast**, equivalent to consensus.
+- A **stream processor** consumes messages in strict order from each log partition.
+- If partitions are based on the unique value (e.g., username hash), the processor can deterministically decide which operation “wins.”
+- **Example (unique username claim):**
+  1. Each request is appended to a log partition (by username hash).
+  2. A stream processor reads sequentially, maintains a local DB of taken names:
+     - If free → marks as taken, emits *success*.
+     - If taken → emits *rejection*.
+  3. The client waits for its result message.
+
+This mechanism ensures consistent, deterministic conflict resolution and scales horizontally by adding partitions.  
+It also generalizes to other constraints where potentially conflicting writes must be processed sequentially.
+
+#### Multi-Partition Request Processing
+
+Some operations, like transferring money between accounts, touch multiple partitions.  
+Traditional databases handle this via **atomic commits** (distributed transactions), but that introduces cross-partition coordination and reduces scalability.
+
+Instead, an **unbundled log-based approach** can achieve equivalent correctness **without atomic commit**:
+
+1. **Client logs the request** (with a unique ID) to a partition based on the request ID.
+2. **Stream processor reads requests** and emits:
+   - A *debit* message for payer account (partitioned by payer).
+   - A *credit* message for payee account (partitioned by payee).
+3. **Downstream processors** consume credit/debit streams and:
+   - Deduplicate by request ID.
+   - Apply balance updates atomically per account.
+
+If a processor crashes, it resumes from the last checkpoint—possibly re-emitting duplicate messages—but the deterministic and idempotent design ensures correctness via deduplication.
+
+An additional processor can validate transactions (e.g., check overdrafts) before logging them in step 1.
+
+- By **decomposing transactions** into:
+  - Sequentially processed log partitions,
+  - Deterministic stream processors,
+  - And **end-to-end request IDs** for deduplication,
+- 👉 Systems can achieve **strong correctness guarantees** (like uniqueness and exactly-once application) **without distributed transactions**—even in multi-partition environments. This approach combines partitioned logs, deterministic processing, and idempotent writes to preserve correctness while maintaining scalability.
