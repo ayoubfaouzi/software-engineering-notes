@@ -474,3 +474,52 @@ In such systems:
 - Coordination reduces inconsistencies but hurts performance and availability.  
 - Lack of coordination improves performance but may increase temporary inconsistencies.
 - 👉 The goal is to find the **sweet spot** — balancing between inconsistencies that require apologies and outages that require apologies.
+
+### Trust, but Verify
+
+Traditional system design assumes certain things can fail (e.g., crashes, power loss, network delays) but others cannot (e.g., CPU arithmetic, disk persistence). In practice, every assumption is probabilistic — rare failures **can** occur even in supposedly reliable hardware and software.
+
+#### Maintaining integrity in the face of software bugs
+
+- Data corruption can occur silently on disks or in memory, despite protections like checksums or TCP reliability.
+- Rare events such as **random bit flips** or **Rowhammer attacks** show that hardware integrity is not absolute.
+- Software, including mature databases like `MySQL` and `PostgreSQL`, can have **bugs that violate integrity guarantees**.
+- Application code is even more error-prone, often misusing database features like transactions or foreign keys.
+
+#### Don’t just blindly trust what they promise
+
+- Both hardware and software eventually fail — so **integrity checks are essential**.
+- Systems should not assume correctness; instead, they should *verify* it.
+- Mature systems (e.g., **HDFS**, **Amazon S3**) regularly **audit their own data** by comparing replicas and verifying integrity.
+- Backups must also be **periodically tested** to ensure they’re actually usable.
+
+#### A Culture of Verification
+
+- Many systems still lack “trust but verify” mechanisms, assuming ACID guarantees are absolute.
+- This “blind trust” became riskier with **NoSQL systems** and weaker consistency guarantees.
+- Future systems should adopt **self-auditing** mechanisms that detect corruption automatically.
+
+#### Designing for Auditability
+
+- Traditional mutation-based transaction logs make it difficult to reconstruct *why* changes occurred.
+- **Event sourcing** improves auditability:
+  - Each user action becomes an **immutable event**.
+  - Derived state is **deterministically** computed from events.
+  - The same event log can be replayed to reproduce state and verify integrity.
+- Using **hashes** or **redundant computation** helps detect corruption in both logs and derived data.
+- Deterministic dataflow makes debugging and time-travel analysis easier.
+
+#### The end-to-end argument again
+
+- Since no layer (hardware or software) can be fully trusted, integrity must be checked **end to end** — from source to derived data.
+- Continuous verification across the entire pipeline provides higher confidence, reduces bugs faster, and increases agility (similar to automated testing).
+
+#### Tools and Future Directions
+
+- Few systems natively support auditability.
+- Some use **audit tables** or **signed transaction logs**, but ensuring correctness of what goes into logs remains difficult.
+- **Cryptographic auditing** (e.g., **Merkle trees**, distributed ledgers) introduces mechanisms to verify integrity across untrusted replicas.
+- Technologies like **blockchains** and **certificate transparency** show potential for **tamper-evident, verifiable data integrity**.
+- Future data systems may integrate these cryptographic proofs for scalable, continuous integrity checking.
+
+👉 We should stop blindly trusting our systems — hardware and software both fail. True robustness comes from **verification**, **auditing**, and **end-to-end integrity checks**. Designing systems that continuously verify their own correctness will make them more trustworthy, maintainable, and resilient in the long run.
