@@ -523,3 +523,42 @@ Traditional system design assumes certain things can fail (e.g., crashes, power 
 - Future data systems may integrate these cryptographic proofs for scalable, continuous integrity checking.
 
 👉 We should stop blindly trusting our systems — hardware and software both fail. True robustness comes from **verification**, **auditing**, and **end-to-end integrity checks**. Designing systems that continuously verify their own correctness will make them more trustworthy, maintainable, and resilient in the long run.
+
+## Doing the Right Thing
+
+In building data systems, every design choice has intended and unintended consequences. As engineers, we must consider how our systems affect the world and consciously decide what kind of world we want to create. Much of the data we handle represents people—their behavior, interests, and identities—so we must treat it with respect and uphold human dignity.
+
+Software engineering increasingly involves ethical decisions. Although ethical guidelines exist (e.g., ACM’s Software Engineering Code of Ethics), they are rarely discussed or enforced, leading to **carelessness** toward **privacy** and the **societal impact** of technology. Technology itself is neutral; what matters is how it’s used and its effects on people.
+
+### Predictive Analytics
+
+- Predictive analytics—one of the major trends in “Big Data”— can have serious real-world implications 🫤.
+- While predicting the weather or disease spread is harmless, **predicting human behavior** (e.g., credit risk, recidivism, or employability) directly affects **lives**.
+- Organizations often act cautiously to minimize risks, but such caution can unfairly exclude people from essential opportunities.
+- When algorithms systematically reject individuals across multiple domains, this can create an “*algorithmic prison*,” restricting basic freedoms without due process or appeal.
+
+#### Bias and Discrimination
+
+- Algorithms are not inherently more fair than humans.
+- Data-driven systems often learn and **amplify existing biases** in their input data. If discriminatory patterns exist in historical data, the model will reproduce and reinforce them ❗.
+- Anti-discrimination laws prohibit decisions based on protected traits (e.g., race, gender, age), but correlated features—like location—can serve as **proxies** for those **traits**.
+- Believing that biased data can yield fair outcomes is misguided; ML can act as “bias laundering,” giving discrimination a veneer of mathematical legitimacy.
+- To build a fairer future, **human moral judgment** is indispensable — data should assist decision-making, not dictate it 🫤.
+
+#### Responsibility and Accountability
+
+- When algorithms make decisions that harm people, the question arises: who is **accountable**❓
+  - Humans can be held responsible for their actions, but algorithmic decisions often lack transparency and appeal mechanisms.
+  - **Credit scores**, though imperfect, are at least **understandable** and **correctable**.
+  - ML models, however, are opaque, often using irrelevant or hidden data features, making it hard to contest unfair outcomes.
+- Predictive analytics tend to generalize based on **similarity to others**, promoting **stereotyping** and **group-based** decisions.
+- Individual errors are inevitable, as predictions are **probabilistic**, not certain. **Blind faith** in** data-driven decisions** is dangerous; we need transparency, accountability, and mechanisms to detect and correct bias.
+- Data should be used to help people, **not exploit them** — for example, targeting aid rather than selling harmful products to vulnerable populations.
+
+#### Feedback Loops
+
+- Even seemingly benign predictive systems, such as **recommendation algorithms**, can create harmful **feedback loops**.
+  - By showing users only content they agree with, systems **reinforce** polarization and misinformation, as seen in social media echo chambers influencing political outcomes.
+  - In other cases, feedback loops can trap individuals in **worsening** conditions. For instance, an employer using credit scores for hiring may deny opportunities to those already in financial trouble, deepening their hardship and perpetuating the cycle of poverty. These outcomes often stem from hidden assumptions presented as objective analysis.
+- Preventing such consequences requires **systems thinking** — examining not just algorithms but their interaction with people and society.
+- We must ask: does the system **amplify inequality** or **promote fairness**❓ Even with good intentions, we must remain alert to unintended effects.
