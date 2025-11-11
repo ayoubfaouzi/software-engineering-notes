@@ -64,7 +64,7 @@ A declaration introduces its name into a scope:
     ```c
     const T& get_data() const { return data_; }
     ```
-- Pointer to const V const Pointer:
+- Pointer to const VS const Pointer:
   ```c
   int i = 10;
   int* p = &i;  // pointer
