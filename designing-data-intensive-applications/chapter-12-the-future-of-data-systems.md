@@ -379,12 +379,12 @@ When databases are **unbundled** into components like logs, stream processors, a
      - If taken → emits *rejection*.
   3. The client waits for its result message.
 
-This mechanism ensures consistent, deterministic conflict resolution and scales horizontally by adding partitions.  
+This mechanism ensures consistent, deterministic conflict resolution and scales horizontally by adding partitions.
 It also generalizes to other constraints where potentially conflicting writes must be processed sequentially.
 
 #### Multi-Partition Request Processing
 
-Some operations, like transferring money between accounts, touch multiple partitions.  
+Some operations, like transferring money between accounts, touch multiple partitions.
 Traditional databases handle this via **atomic commits** (distributed transactions), but that introduces cross-partition coordination and reduces scalability.
 
 Instead, an **unbundled log-based approach** can achieve equivalent correctness **without atomic commit**:
@@ -448,7 +448,7 @@ While strict uniqueness constraints require coordination (consensus), many real-
 - Overbooked flights → compensate or upgrade.
 - Overdrawn account → apply overdraft fee.
 
-Such **compensating transactions** handle constraint violations after the fact.  
+Such **compensating transactions** handle constraint violations after the fact.
 The key: **integrity must hold**, but **timeliness of enforcement can be relaxed**.
 
 This allows **optimistic writes** followed by validation — trading strict synchronization for operational simplicity.
@@ -456,7 +456,7 @@ This allows **optimistic writes** followed by validation — trading strict sync
 #### Coordination-Avoiding Data Systems
 
 Two insights:
-1. **Integrity** can be maintained without atomic commit or linearizability.  
+1. **Integrity** can be maintained without atomic commit or linearizability.
 2. Many **constraints** can be relaxed or repaired later.
 
 Therefore, **coordination-avoiding systems** can:
@@ -471,7 +471,7 @@ In such systems:
 
 #### The Trade-Off
 
-- Coordination reduces inconsistencies but hurts performance and availability.  
+- Coordination reduces inconsistencies but hurts performance and availability.
 - Lack of coordination improves performance but may increase temporary inconsistencies.
 - 👉 The goal is to find the **sweet spot** — balancing between inconsistencies that require apologies and outages that require apologies.
 
@@ -562,3 +562,70 @@ Software engineering increasingly involves ethical decisions. Although ethical g
   - In other cases, feedback loops can trap individuals in **worsening** conditions. For instance, an employer using credit scores for hiring may deny opportunities to those already in financial trouble, deepening their hardship and perpetuating the cycle of poverty. These outcomes often stem from hidden assumptions presented as objective analysis.
 - Preventing such consequences requires **systems thinking** — examining not just algorithms but their interaction with people and society.
 - We must ask: does the system **amplify inequality** or **promote fairness**❓ Even with good intentions, we must remain alert to unintended effects.
+
+### Privacy and Tracking
+
+- When users intentionally submit data (e.g., uploading a file or form), the system serves them— **the user is the customer**.
+- But when activity is *passively tracked* (e.g., clicks, movement, behavior), the relationship changes. The system begins to act in its **own interests**, which often conflict with the user’s.
+- Tracking initially serves **user-facing goals** (e.g., better search ranking, recommendations, UX improvements), but in ad-funded models, *advertisers* become the true customers. Users are incentivized to stay engaged while their data fuels targeted marketing—turning the relationship into one of **surveillance**.
+
+#### Surveillance
+
+- If we replace “data” with “surveillance,” the modern internet’s language becomes alarming: “surveillance-driven organizations,” “surveillance warehouses,” etc 🦹‍♂️.
+- The global expansion of connected devices—smartphones, TVs, assistants—creates a voluntary yet pervasive **mass surveillance infrastructure**, run by corporations rather than governments.
+- We accept this surveillance because:
+  - We believe we have “nothing to hide.” 😲
+  - We see the purpose as benign (recommendations, ads). 😲
+- But once such data influences crucial areas (insurance, employment, credit), the effects become coercive and discriminatory.
+
+#### Consent and freedom of choice
+
+- Although users “agree” to terms and privacy policies, this consent is **not meaningful**:
+  - Users don’t understand how data is used, retained, or combined with external datasets 🫤.
+  - Data collection is **one-sided** and **non-negotiable**; users can’t choose how much data to share or how it’s used.
+  - Opting out of major platforms (Google, Facebook) comes with **social and professional costs**, making participation effectively mandatory.
+- ▶️ Surveillance thus becomes **inescapable**, especially for those without the privilege or knowledge to avoid it.
+
+#### Privacy and use of data
+
+- Privacy isn’t about hiding—it’s about **control**: deciding what to share and with whom.
+- In surveillance-driven systems, this control shifts from individuals to corporations that ask users to “trust us.” These companies:
+- Keep their profiling methods secret to avoid appearing “creepy.”
+- Reveal personal insights indirectly (e.g., ad targeting for medical conditions).
+Thus, **corporations, not individuals, decide what information is exposed**, guided by profit rather than ethics.
+Even privacy settings only govern what *other users* see, not what the company can do internally with the data.
+
+#### Data as assets and power
+
+- Behavioral data isn’t “exhaust”—it’s the **core asset** of data-driven businesses.
+- Users’ creativity and interactions are exploited to feed surveillance infrastructure.
+- A vast industry of **data brokers** buys, analyzes, and sells personal data, while companies, governments, and criminals all compete to obtain it.
+- Since **data leaks**, **hacks**, and **coercion** are inevitable, data becomes a **“toxic asset”**—a risk to collect at all.
+- Collecting it assumes that no future regime will misuse it— an **unsafe assumption** 😞.
+
+As the saying goes:
+> “It is poor civic hygiene to install technologies that could someday facilitate a police state.”
+
+👉 Surveillance is a form of **asymmetric power**: those who observe gain control over those who are observed.
+
+#### Remembering the Industrial Revolution
+
+- Like the Industrial Revolution, the **Information Age** brings **progress** *and* **harm**:
+  - Economic growth and connectivity come with **privacy pollution** and **exploitation**.
+  - Just as factories once polluted rivers and abused workers, data industries now **exploit human information** with few safeguards.
+
+*Bruce Schneier* aptly said:
+> “Data is the pollution problem of the information age, and privacy protection is the environmental challenge.”
+
+👉 Future generations will judge how we handled this crisis of data misuse.
+
+#### Legislation and self-regulation
+
+- Data protection laws (e.g., the EU’s 1995 Directive) require that personal data be collected only for **specific purposes**—but this conflicts with the **Big Data** ethos of collecting everything “just in case” 🫤.
+- **Over-regulation** risks **stifling innovation**, especially in beneficial fields like medicine, but lack of oversight leads to **abuse**.
+- The solution isn’t purely legal—it’s **cultural**:
+  - Treat users as **humans**, not **metrics**.
+  - Build **trust** through **transparency** and **education**.
+  - Respect user agency over data.
+  - Avoid **indefinite retention** — purge data once it’s no longer needed.
+  - Explore cryptographic enforcement of access control.
