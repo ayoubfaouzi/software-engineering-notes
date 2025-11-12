@@ -1,4 +1,4 @@
-# Chapter 11. The Future of Data Systems
+# Chapter 12. The Future of Data Systems
 
 The final chapter shifts focus from how systems **are** to how they **should be**, proposing ideas to improve the design of reliable, scalable, and maintainable applications. It synthesizes the book’s main themes—**fault tolerance, scalability, and maintainability**—and explores how to build future systems that are **robust, correct, evolvable**, and **beneficial to humanity**.
 
@@ -335,7 +335,7 @@ Treating queries as streams allows distributed joins and computations across par
 
 #### The End-to-End Argument
 
-- Introduced by *Saltzer, Reed, and Clark* (1984):
+- Introduced by _Saltzer, Reed, and Clark_ (1984):
   _Some correctness properties can only be implemented fully with cooperation from the application endpoints—not by lower layers alone._
 - TCP, checksums, or even database transactions provide **partial reliability**, but cannot ensure full end-to-end correctness.
 - Examples:
@@ -350,7 +350,7 @@ Treating queries as streams allows distributed joins and computations across par
 - Unfortunately, implementing this correctly at the application level is **complex and error-prone**.
 - **Transactions simplify many issues** (collapsing failures to commit/abort outcomes), but they don’t scale easily across distributed or heterogeneous systems.
 - Refusing distributed transactions for performance reasons often forces developers to reimplement partial, buggy equivalents.
-- 👉  The author argues for **new fault-tolerance abstractions** that:
+- 👉 The author argues for **new fault-tolerance abstractions** that:
   - Provide **application-specific end-to-end correctness** (like deduplication or idempotence).
   - Are **easier to reason about** than current models.
   - Maintain **high performance and scalability** in distributed systems.
@@ -375,8 +375,8 @@ When databases are **unbundled** into components like logs, stream processors, a
 - **Example (unique username claim):**
   1. Each request is appended to a log partition (by username hash).
   2. A stream processor reads sequentially, maintains a local DB of taken names:
-     - If free → marks as taken, emits *success*.
-     - If taken → emits *rejection*.
+     - If free → marks as taken, emits _success_.
+     - If taken → emits _rejection_.
   3. The client waits for its result message.
 
 This mechanism ensures consistent, deterministic conflict resolution and scales horizontally by adding partitions.
@@ -391,8 +391,8 @@ Instead, an **unbundled log-based approach** can achieve equivalent correctness 
 
 1. **Client logs the request** (with a unique ID) to a partition based on the request ID.
 2. **Stream processor reads requests** and emits:
-   - A *debit* message for payer account (partitioned by payer).
-   - A *credit* message for payee account (partitioned by payee).
+   - A _debit_ message for payer account (partitioned by payer).
+   - A _credit_ message for payee account (partitioned by payee).
 3. **Downstream processors** consume credit/debit streams and:
    - Deduplicate by request ID.
    - Apply balance updates atomically per account.
@@ -409,17 +409,17 @@ An additional processor can validate transactions (e.g., check overdrafts) befor
 
 ### Timeliness and Integrity
 
-When operations are **unbundled** into asynchronous stages (e.g., logs and stream processors), we must rethink **correctness**, **consistency**, and **constraints** beyond traditional ACID transactions.  
+When operations are **unbundled** into asynchronous stages (e.g., logs and stream processors), we must rethink **correctness**, **consistency**, and **constraints** beyond traditional ACID transactions.
 
 - Traditional **transactions** are **linearizable**: once committed, their writes are immediately visible.
 - In **streaming systems**, operations are **asynchronous** — producers don’t wait for consumers.
 - A client may wait for an output message (for confirmation), but correctness does not depend on waiting — only the notification does.
-- The term *consistency* actually mixes two distinct ideas:
+- The term _consistency_ actually mixes two distinct ideas:
 
-| Concept | Meaning | Violation Type | Recovery |
-|----------|----------|----------------|-----------|
-| **Timeliness** | Users see up-to-date state (fresh data) | Temporary inconsistency (eventual consistency) | Wait and retry |
-| **Integrity** | No corruption or contradictory data (derivations and views are correct) | Permanent inconsistency (data corruption) | Must be repaired |
+| Concept        | Meaning                                                                 | Violation Type                                 | Recovery         |
+| -------------- | ----------------------------------------------------------------------- | ---------------------------------------------- | ---------------- |
+| **Timeliness** | Users see up-to-date state (fresh data)                                 | Temporary inconsistency (eventual consistency) | Wait and retry   |
+| **Integrity**  | No corruption or contradictory data (derivations and views are correct) | Permanent inconsistency (data corruption)      | Must be repaired |
 
 - **Integrity** violations are catastrophic (e.g., mismatched credits/debits).
 - **Timeliness** violations are merely delays (e.g., recent card transaction not yet visible).
@@ -428,6 +428,7 @@ When operations are **unbundled** into asynchronous stages (e.g., logs and strea
 #### Correctness of dataflow systems
 
 Event-driven dataflow systems **decouple timeliness from integrity**:
+
 - They lack timeliness by default (since they are asynchronous).
 - But they can **preserve integrity** with:
   - **Exactly-once/effectively-once semantics** (no lost or duplicate events)
@@ -437,7 +438,7 @@ Event-driven dataflow systems **decouple timeliness from integrity**:
   - **Immutable messages** (reprocessing allows recovery from bugs)
   - **End-to-end request IDs** (to track and deduplicate events)
 
-These mechanisms provide **strong integrity guarantees** *without distributed transactions or atomic commit*, resulting in high correctness, performance, and robustness.
+These mechanisms provide **strong integrity guarantees** _without distributed transactions or atomic commit_, resulting in high correctness, performance, and robustness.
 
 #### Loosely Interpreted Constraints
 
@@ -456,15 +457,18 @@ This allows **optimistic writes** followed by validation — trading strict sync
 #### Coordination-Avoiding Data Systems
 
 Two insights:
+
 1. **Integrity** can be maintained without atomic commit or linearizability.
 2. Many **constraints** can be relaxed or repaired later.
 
 Therefore, **coordination-avoiding systems** can:
+
 - Ensure integrity without synchronous coordination.
 - Operate across datacenters with **asynchronous multi-leader replication**.
 - Achieve **high performance and availability** while tolerating weaker timeliness.
 
 In such systems:
+
 - **Serializable transactions** remain useful for small-scope derived state.
 - **Global distributed transactions (XA, two-phase commit, etc.)** are unnecessary.
 - **Synchronous coordination** can be selectively applied only where recovery is impossible.
@@ -489,7 +493,7 @@ Traditional system design assumes certain things can fail (e.g., crashes, power 
 #### Don’t just blindly trust what they promise
 
 - Both hardware and software eventually fail — so **integrity checks are essential**.
-- Systems should not assume correctness; instead, they should *verify* it.
+- Systems should not assume correctness; instead, they should _verify_ it.
 - Mature systems (e.g., **HDFS**, **Amazon S3**) regularly **audit their own data** by comparing replicas and verifying integrity.
 - Backups must also be **periodically tested** to ensure they’re actually usable.
 
@@ -501,7 +505,7 @@ Traditional system design assumes certain things can fail (e.g., crashes, power 
 
 #### Designing for Auditability
 
-- Traditional mutation-based transaction logs make it difficult to reconstruct *why* changes occurred.
+- Traditional mutation-based transaction logs make it difficult to reconstruct _why_ changes occurred.
 - **Event sourcing** improves auditability:
   - Each user action becomes an **immutable event**.
   - Derived state is **deterministically** computed from events.
@@ -535,7 +539,7 @@ Software engineering increasingly involves ethical decisions. Although ethical g
 - Predictive analytics—one of the major trends in “Big Data”— can have serious real-world implications 🫤.
 - While predicting the weather or disease spread is harmless, **predicting human behavior** (e.g., credit risk, recidivism, or employability) directly affects **lives**.
 - Organizations often act cautiously to minimize risks, but such caution can unfairly exclude people from essential opportunities.
-- When algorithms systematically reject individuals across multiple domains, this can create an “*algorithmic prison*,” restricting basic freedoms without due process or appeal.
+- When algorithms systematically reject individuals across multiple domains, this can create an “_algorithmic prison_,” restricting basic freedoms without due process or appeal.
 
 #### Bias and Discrimination
 
@@ -566,8 +570,8 @@ Software engineering increasingly involves ethical decisions. Although ethical g
 ### Privacy and Tracking
 
 - When users intentionally submit data (e.g., uploading a file or form), the system serves them— **the user is the customer**.
-- But when activity is *passively tracked* (e.g., clicks, movement, behavior), the relationship changes. The system begins to act in its **own interests**, which often conflict with the user’s.
-- Tracking initially serves **user-facing goals** (e.g., better search ranking, recommendations, UX improvements), but in ad-funded models, *advertisers* become the true customers. Users are incentivized to stay engaged while their data fuels targeted marketing—turning the relationship into one of **surveillance**.
+- But when activity is _passively tracked_ (e.g., clicks, movement, behavior), the relationship changes. The system begins to act in its **own interests**, which often conflict with the user’s.
+- Tracking initially serves **user-facing goals** (e.g., better search ranking, recommendations, UX improvements), but in ad-funded models, _advertisers_ become the true customers. Users are incentivized to stay engaged while their data fuels targeted marketing—turning the relationship into one of **surveillance**.
 
 #### Surveillance
 
@@ -592,8 +596,8 @@ Software engineering increasingly involves ethical decisions. Although ethical g
 - In surveillance-driven systems, this control shifts from individuals to corporations that ask users to “trust us.” These companies:
 - Keep their profiling methods secret to avoid appearing “creepy.”
 - Reveal personal insights indirectly (e.g., ad targeting for medical conditions).
-Thus, **corporations, not individuals, decide what information is exposed**, guided by profit rather than ethics.
-Even privacy settings only govern what *other users* see, not what the company can do internally with the data.
+  Thus, **corporations, not individuals, decide what information is exposed**, guided by profit rather than ethics.
+  Even privacy settings only govern what _other users_ see, not what the company can do internally with the data.
 
 #### Data as assets and power
 
@@ -604,17 +608,19 @@ Even privacy settings only govern what *other users* see, not what the company c
 - Collecting it assumes that no future regime will misuse it— an **unsafe assumption** 😞.
 
 As the saying goes:
+
 > “It is poor civic hygiene to install technologies that could someday facilitate a police state.”
 
 👉 Surveillance is a form of **asymmetric power**: those who observe gain control over those who are observed.
 
 #### Remembering the Industrial Revolution
 
-- Like the Industrial Revolution, the **Information Age** brings **progress** *and* **harm**:
+- Like the Industrial Revolution, the **Information Age** brings **progress** _and_ **harm**:
   - Economic growth and connectivity come with **privacy pollution** and **exploitation**.
   - Just as factories once polluted rivers and abused workers, data industries now **exploit human information** with few safeguards.
 
-*Bruce Schneier* aptly said:
+_Bruce Schneier_ aptly said:
+
 > “Data is the pollution problem of the information age, and privacy protection is the environmental challenge.”
 
 👉 Future generations will judge how we handled this crisis of data misuse.
