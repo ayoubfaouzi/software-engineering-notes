@@ -40,8 +40,7 @@
 ### Software errors
 
 - Harder to anticipate because they are correlated across nodes, they tend to cause many more system failures than uncorrelated hardware faults. Examples include:
-  - A software **bug** that causes every instance of an application server to crash when given a particular bad
-  input. For example, consider the leap second on _June 30, 2012_ that caused many applications to hang simultaneously, due to a **bug in the Linux kernel**.
+  - A software **bug** that causes every instance of an application server to crash when given a particular bad input. For example, consider the leap second on _June 30, 2012_ that caused many applications to hang simultaneously, due to a **bug in the Linux kernel**.
   - A **runaway process** uses up some shared resource—CPU time, memory, disk space or network bandwidth.
   - A **service** that the system depends on slows down, becomes **unresponsive** or starts returning corrupted responses.
   - **Cascading failures**, where a small fault in one component triggers a fault in another component, which in turn triggers further faults.
@@ -71,8 +70,7 @@
 ### Describing performance
 
 - In a batch-processing system such as _Hadoop_, we usually care about **throughput**: the number of records we can process per second, or the total time it takes to run a job on a dataset of a certain size.
--  In online systems, what’s usually more important is the service’s **response time** — that is, the time between a client sending a request and
-receiving a response.
+- In online systems, what’s usually more important is the service’s **response time** — that is, the time between a client sending a request and receiving a response.
 - In practice, in a system handling a variety of requests, the latency per request can **vary a lot**. We therefore need to think of latency not as a **single number**, but as a **probability distribution**.
 - Even in a scenario where you’d think all requests should take the same time, you get variation: random additional latency could be introduced by:
   - A **context switch** to a background process;
@@ -108,7 +106,7 @@ receiving a response.
 
 ## Simplicity: managing complexity
 
-- *Moseley and Marks* define complexity as _accidental_ if it is not inherent in the problem that the software solves (as seen by the users), but arises only from the implementation.
+- _Moseley and Marks_ define complexity as _accidental_ if it is not inherent in the problem that the software solves (as seen by the users), but arises only from the implementation.
 - One of the best tools we have for removing accidental complexity is **abstraction**. A good abstraction can hide a great deal of implementation detail behind a clean, simple-to-understand facade.
 - High-level programming languages are abstractions that hide machine code, CPU registers and syscalls.
 - SQL is an abstraction that hides complex on-disk and in-memory data structures, concurrent requests from other clients, and inconsistencies after crashes.
