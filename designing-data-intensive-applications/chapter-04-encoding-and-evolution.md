@@ -186,3 +186,130 @@ issues, they also have some subtle problems:
   - If newer code adds a field, older code may overwrite records without preserving the unknown field.
   - Good encoding formats can preserve unknown fields, but apps must also handle this carefully (otherwise unknown fields may be lost when mapping to objects and re-encoding).
 - 👉 Databases require both forward and backward compatibility, plus care to preserve unknown fields during schema evolution.
+
+#### Different values written at different times
+
+- In databases, data is written and updated at different times—some records may be minutes old, others years old.
+- When you deploy a new application version, code updates quickly, but **old data remains**, often still in its original format.
+- This leads to the principle: **data outlives code**.
+- Rewriting all old data to match a new schema (data migration) is possible but **expensive** for large datasets.
+- Instead, most databases support **schema evolution**, allowing structural changes—like adding new columns with default values—without rewriting existing data.
+- For example:
+  - Old rows **missing new columns** are filled with `null` at read time.
+  - Systems like `LinkedIn’s Espresso` use **Avro**, which natively supports schema evolution, enabling data with different historical encodings to appear uniform when read.
+
+#### Archival Storage
+
+- When databases are **snapshotted or exported** (e.g., for backups or analytics), data can be re-encoded using the latest schema for consistency.
+- Since the dump is **immutable**, it’s ideal to store it in stable, efficient formats such as:
+  - **Avro** (for consistent record-based storage)
+  - **Parquet** (for analytics-optimized, columnar storage)
+- 👉 These archival snapshots ensure long-term data stability and schema consistency, even as live databases evolve.
+
+### Dataflow Through Services: REST and RPC
+
+- Network communication is commonly structured in a **client–server model**:
+  - **Servers** expose APIs (services) over the network.
+  - **Clients** send requests and receive responses.
+- Servers can also act as clients to other servers—forming **service-oriented architectures (SOA)** or modern **microservices**, where each service handles a specific function and communicates with others via APIs.
+- Both accept and return data, but:
+  - **Databases** allow **arbitrary queries** via query languages.
+  - **Services** expose a **fixed, application-specific API** controlled by business logic.
+- This creates **encapsulation**, restricting client access to defined operations.
+- A key goal of microservices: **independent deployment and evolution**.
+  - Multiple service versions may run concurrently, requiring **backward/forward compatibility** in APIs.
+
+#### Web Services
+
+- When communication uses **HTTP**, the service is called a **web service**, used in contexts such as:
+  1. Mobile or web clients communicating over the internet.
+  2. Services communicating within a data center.
+  3. Cross-organization integrations (e.g., OAuth, payment APIs).
+- Two dominant approaches:
+  - **REST (Representational State Transfer)**
+  - Not a protocol but a design philosophy based on HTTP.
+  - Uses simple formats (JSON), URLs for resources, and HTTP features (cache control, auth).
+  - Common in microservices and public APIs.
+  - **SOAP (Simple Object Access Protocol)**
+  - XML-based, complex, and often uses **WSDL** for code generation.
+  - Heavy tool reliance; interoperability issues led to its decline outside large enterprises.
+
+#### The problems with remote procedure calls (RPCs)
+
+- RPC tries to make network calls appear like **local function calls** (location transparency), but this abstraction fails because network calls differ fundamentally:
+  - **Unreliable:** Requests may fail, timeout, or duplicate due to retries.
+  - **Latency:** Network calls are far slower and unpredictable.
+  - **Serialization:** Data must be encoded to bytes, unlike local in-memory references.
+  - **Language mismatch:** Data type translation can be messy.
+- ➡️ Because of these issues, pretending network calls are local leads to brittle systems. REST succeeds partly because it **embraces the network’s realities** instead of hiding them.
+
+#### Current directions for RPC
+
+- Despite drawbacks, RPC persists in improved forms such as:
+  - **Thrift**, **Avro RPC**, **gRPC (Protocol Buffers)**, **Finagle**, **Rest.li**.
+- Enhancements include:
+  - **Futures/promises** for async handling.
+  - **Streaming** support (e.g., gRPC).
+  - **Service discovery** for locating endpoints.
+  - **Binary encodings** for performance (faster than JSON).
+- 👉 However, **REST** remains dominant for **public APIs** due to simplicity, tool support, and compatibility.
+
+#### Data encoding and evolution for RPC
+
+- For evolvability:
+  - Servers are usually updated **before** clients.
+  - Thus, services must maintain **backward-compatible requests** and **forward-compatible responses**.
+- Compatibility depends on encoding:
+  - **Thrift, gRPC, Avro:** well-defined evolution rules.
+  - **SOAP:** XML schema evolution possible but tricky.
+  - **REST (JSON):** flexible; adding fields or parameters is typically compatible.
+- 👉 Long-term compatibility is critical, especially for **external clients** outside the provider’s control.
+When breaking changes are needed, multiple API versions are often maintained (e.g., via URL versioning or HTTP headers).
+
+### Message-Passing Dataflow
+
+- Asynchronous **message-passing systems** sit between **RPC** and **databases**:
+  - Like **RPC**, messages are delivered to another process with **low latency**.
+  - Like **databases**, they pass through an **intermediary**—a **message broker**—that **temporarily stores** messages.
+- These systems allow processes to communicate **asynchronously** (send and forget), rather than waiting for a reply.
+
+#### Message Brokers
+
+- Using a **message broker** (also called a message queue or middleware) offers major advantages over direct RPC:
+  - **Buffering**: absorbs load spikes or recipient downtime.
+  - **Reliability**: can redeliver messages after crashes.
+  - **Decoupling**: sender doesn’t need recipient’s address or availability.
+  - **Fan-out**: allows broadcasting one message to multiple recipients.
+  - **Loose coupling**: senders publish messages without caring who consumes them.
+- Unlike RPC, communication is **one-way**—responses, if needed, occur on a **separate channel**.
+- Popular open source brokers: **RabbitMQ**, **ActiveMQ**, **HornetQ**, **NATS**, **Apache Kafka**.
+  - Older enterprise brokers include **TIBCO**, **IBM WebSphere**, **webMethods**.
+- **Core concepts:**
+  - **Producer** sends messages to a **queue** or **topic**.
+  - **Broker** ensures delivery to one or more **consumers/subscribers**.
+  - Supports **many producers** and **many consumers** per topic.
+- Messages are simply **byte sequences** with optional metadata—any encoding format can be used.
+- For flexibility and evolvability, use **forward/backward-compatible encodings** so producers and consumers can evolve independently.
+- If consumers **re-publish** messages, they must **preserve unknown fields** to avoid data loss between schema versions.
+
+#### Distributed actor frameworks
+
+- The **actor model** is a concurrency paradigm where:
+  - Each **actor** encapsulates state and processes one message at a time.
+  - Actors communicate via **asynchronous messages**.
+  - **No shared state**, **no locks**, and **no race conditions**.
+- Messages can be **lost**—this is expected and managed by design.
+- **Distributed Actor Model** Extends the actor concept across multiple machines:
+- Same message-passing mechanism works locally or across the network.
+- Messages are encoded, sent, and decoded transparently.
+- **Location transparency** works better than in RPC, since the model already tolerates message loss and variable latency.
+
+Essentially, a **distributed actor framework = message broker + actor model**.
+Still, **forward/backward compatibility** matters for **rolling upgrades**, as old and new nodes may coexist.
+
+#### Message Encoding in Popular Actor Frameworks:
+| Framework | Default Encoding | Rolling Upgrade Support | Notes |
+|------------|------------------|--------------------------|--------|
+| **Akka** | Java serialization | ❌ (default), ✅ with Protocol Buffers | Pluggable serializer allows compatibility |
+| **Orleans** | Custom binary format | ❌ Requires new cluster for upgrade | Can be extended with custom serialization |
+| **Erlang OTP** | Record-based | ⚠️ Difficult but possible | New **maps** datatype (Erlang R17+) may simplify schema changes |
