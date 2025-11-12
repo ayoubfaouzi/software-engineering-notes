@@ -60,7 +60,7 @@
 
 - When the relational model was introduced, it included a new way of querying data: it used a **declarative** query language, whereas IMS and CODASYL queried the database using **imperative** code. What does that mean?
 - An **imperative** language tells the computer to perform certain operations in a **certain order**. You can imagine stepping through the code, line by line, evaluating conditions, updating variables, and deciding whether to go around the loop one more time.
-- **Declarative** querying means that you just specify the pattern of the data you want—what conditions the results must meet, and how you want it to be transformed (e.g. sorted, grouped and aggregated), but not *how to achieve that goal*. It is up to the database system’s query optimizer to decide which indexes and which join methods to use, and in which order to execute various parts of the query.
+- **Declarative** querying means that you just specify the pattern of the data you want—what conditions the results must meet, and how you want it to be transformed (e.g. sorted, grouped and aggregated), but not _how to achieve that goal_. It is up to the database system’s query optimizer to decide which indexes and which join methods to use, and in which order to execute various parts of the query.
 - A declarative query language is attractive because it is typically more **concise and easier** to work with than an imperative API. But more importantly, it also **hides implementation details** of the database engine, which makes it possible for the database system to introduce performance improvements without requiring any changes to queries.
 - The fact that SQL is more limited in functionality gives the database much more room for automatic optimizations.
 - Imperative code is very **hard to parallelize** across multiple cores and multiple machines, but declarative languages have a chance of getting faster.
@@ -147,14 +147,14 @@ db.observations.aggregate([
 
 ## Graph-like Data Models
 
-- If your application has mostly **one-to-many relationships**  or **no relationships between records**, the document model is appropriate.
+- If your application has mostly **one-to-many relationships** or **no relationships between records**, the document model is appropriate.
 - But what if many-to-many relationships are very common in your data? The relational model can handle simple cases of many-to-many relationships, but as the connections within your data become more complex, it becomes more natural to start modeling your data as a **graph**.
 - A graph consists of two kinds of object: **vertices** (also known as **nodes** or **entities**) and **edges** (also known as relationships). Many kinds of data can be modeled as a graph. Typical examples include:
   - Social graphs: Vertices are people, edges indicate which people know each other.
   - The web graph: Vertices are web pages, edges indicate HTML links to other pages.
   - Road or rail networks: Vertices are junctions, and edges represent the roads or railway lines between them.
 - Graphs are not limited to represent only _homogeneous_ data: an equally powerful use of graphs is to provide a consistent way of storing completely **different types** of object in a single data store. For example, Facebook maintains a single graph with many different types of vertex and edge: vertices represent people, locations, events, checkins and comments made by users; edges indicate which people are friends with each other, which checkin happened in which location, who commented on which post, who attended which event, etc.
-- There are several different, but related, ways of structuring and querying data in graphs. In this section we will discuss the property graph model (implemented by *Neo4j*, *Titan*, *InfiniteGraph*) and the triple-store model (implemented by *Datomic*, *AllegroGraph* and others). We will look at three declarative query languages for graphs: _Cypher_, _SPARQL_, and _Datalog_. <p align="center"><img src="assets/graph-structured-data.png"></p>
+- There are several different, but related, ways of structuring and querying data in graphs. In this section we will discuss the property graph model (implemented by _Neo4j_, _Titan_, _InfiniteGraph_) and the triple-store model (implemented by _Datomic_, _AllegroGraph_ and others). We will look at three declarative query languages for graphs: _Cypher_, _SPARQL_, and _Datalog_. <p align="center"><img src="assets/graph-structured-data.png"></p>
 
 ### Property graphs
 
@@ -285,9 +285,9 @@ SELECT ?personName WHERE {
 
 ### The foundation: Datalog
 
-- Datalog is a much older language than SPARQL or Cypher, having been studied extensively by academics in the 1980s.
-- Datalog’s data model is similar to the triple-store model, generalized a bit. Instead of writing a triple as `(subject, predicate, object)`, we write it as `predicate(subject, object)`.
-- Example below shows how to write the data from our example in Datalog.
+- `Datalog` is a much older language than SPARQL or Cypher, having been studied extensively by academics in the 1980s.
+- `Datalog’s` data model is similar to the triple-store model, generalized a bit. Instead of writing a triple as `(subject, predicate, object)`, we write it as `predicate(subject, object)`.
+- Example below shows how to write the data from our example in `Datalog`.
 
 ```js
 name(namerica, 'North America').
@@ -305,7 +305,7 @@ name(lucy, 'Lucy').
 born_in(lucy, idaho).
 ```
 
-- Now that we have defined the data, we can write the same query as before, as shown in Example above. It looks a bit different from the equivalent in Cypher or SPARQL, but don’t let that put you off. Datalog is a subset of Prolog, which you might have seen before if you studied computer science.
+- Now that we have defined the data, we can write the same query as before, as shown in Example above. It looks a bit different from the equivalent in Cypher or SPARQL, but don’t let that put you off. `Datalog` is a subset of Prolog, which you might have seen before if you studied computer science.
 
 ```js
 within_recursive(Location, Name) :- name(Location, Name). /_ Rule 1 _/
@@ -319,7 +319,8 @@ migrated(Name, BornIn, LivingIn) :- name(Person, Name), /_ Rule 3 _/
 ?- migrated(Who, 'United States', 'Europe').
 /_ Who = 'Lucy'. _/
 ```
-- The Datalog approach requires a different kind of thinking to the other query languages discussed in this chapter, but it’s a very powerful approach, because rules can be combined and reused in different queries. It’s less convenient for simple one-off queries, but it can cope better if your data is complex.
+
+- The `Datalog` approach requires a different kind of thinking to the other query languages discussed in this chapter, but it’s a very powerful approach, because rules can be combined and reused in different queries. It’s less convenient for simple one-off queries, but it can cope better if your data is complex.
 
 🔶 Summary
 
