@@ -24,7 +24,7 @@
 ## Searching
 
 - Searching, though, is tedious, since the computer has no way to jump to a particular value.
-- For N cells in an array, linear search would take a maximum of **N steps**.
+- For N cells in an array, linear search would take a maximum of `N steps`.
 
 ## Insertion
 
@@ -32,12 +32,12 @@
 - Inserting at the end of the array takes just one step. But there’s one hitch, we need an extra **memory allocation**.
 - Inserting to the middle of the array need to shift pieces of data to make room for what we’re inserting, leading to additional steps.
 - The **worst-case** scenario for insertion into an array - that is, the scenario in which insertion takes the most steps - is when we insert data at the **beginning** of the array.
-- We can say that insertion in a worst-case scenario can take **N + 1** steps for an array containing `N` elements.
+- We can say that insertion in a worst-case scenario can take `N + 1` steps for an array containing `N` elements.
 
 ## Deletion
 
 - Like insertion, the **worst-case** scenario of deleting an element is deleting the **very first** element of the array. This is because index 0 would become empty, and we’d have to shift all the remaining elements to the left to fill the gap.
-- We can say then, that for an array containing `N` elements, the maximum number of steps that deletion would take is **N steps**.
+- We can say then, that for an array containing `N` elements, the maximum number of steps that deletion would take is `N steps`.
 
 ## Sets: How a Single Rule Can Affect Efficiency
 
@@ -45,7 +45,7 @@
 - Reading / searching a set is exactly the same as reading / searching an array.
 - Insertion, however, is where arrays and sets diverge.
   - Every insertion into a set first requires a search.
-  - In the worst-case scenario, where we’re inserting a value at the beginning of a set, the computer needs to search N cells to ensure that the set doesn’t already contain that value, another N steps to shift all the data to the right, and another final step to insert the new value. ▶️ That’s a total of 2N + 1 steps.
+  - In the **worst-case** scenario, where we’re inserting a value at the beginning of a set, the computer needs to search N cells to ensure that the set doesn’t already contain that value, another `N` steps to shift all the data to the right, and another final step to insert the new value. ▶️ That’s a total of `2N + 1` steps.
 
 ## Exercises:
 

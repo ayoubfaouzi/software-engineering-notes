@@ -1,6 +1,6 @@
 # Why Algorithms Matter
 
-- Another major factor can affect the efficiency of our code: the proper selection of which **algorithm** to use.
+Another major factor can affect the efficiency of our code: the proper selection of which **algorithm** to use.
 
 ## Ordered Arrays
 
