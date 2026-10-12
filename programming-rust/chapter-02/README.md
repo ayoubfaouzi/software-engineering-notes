@@ -542,7 +542,7 @@ fn main() {
 ```
 
 To this end, we’ll divide the image into sections, one per processor, and let each processor color the pixels assigned to it. For simplicity, we’ll break it into horizontal bands, as shown below. When all processors have finished, we can write out the pixels to disk.
-<p align="center"><img src="./assets/maldelbrot-concurrency.png" width="500px" height="auto"></p>
+<p align="center"><img src="../assets/maldelbrot-concurrency.png" width="500px" height="auto"></p>
 
 Rust offers a **scoped thread** facility that does exactly what we need here. To use it, we need to take out the single line calling render and replace it with the following:
 
